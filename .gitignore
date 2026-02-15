@@ -1,0 +1,18 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+*.zip
+_OUT/
+_DROP/
+
+# Local engine scratch
+.jp_temp/
+.jp_runs/
+
+# PowerShell module cache (if ever used locally)
+Modules/

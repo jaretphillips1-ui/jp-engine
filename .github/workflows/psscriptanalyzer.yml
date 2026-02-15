@@ -1,0 +1,22 @@
+name: psscriptanalyzer
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PSScriptAnalyzer module
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -ErrorAction Stop
+      - name: Lint with PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Invoke-ScriptAnalyzer -Path ./scripts -Recurse -OutVariable issues
+          $errors = $issues.Where({ $_.Severity -eq 'Error' })
+          if ($errors) { throw "PSScriptAnalyzer errors: $($errors.Count)" }
+          "PSScriptAnalyzer OK"
