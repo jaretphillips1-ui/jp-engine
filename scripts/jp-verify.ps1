@@ -53,6 +53,22 @@ try {
     Say "PSScriptAnalyzer OK."
   }
 
+  # BEGIN JP_VERIFY_EXTRAS
+  # Extra diagnostics: Git CRLF enforcement + safecrlf/autocrlf visibility
+  try { $top = (git rev-parse --show-toplevel 2>$null) } catch { $top = $null }
+  $ga = if ($top) { Join-Path $top ".gitattributes" } else { ".gitattributes" }
+  $hasGA = Test-Path -LiteralPath $ga
+  try { $safecrlf = (git config --local --get core.safecrlf 2>$null) } catch { $safecrlf = $null }
+  try { $autocrlf = (git config --local --get core.autocrlf 2>$null) } catch { $autocrlf = $null }
+  if ([string]::IsNullOrWhiteSpace($safecrlf)) { $safecrlf = "(unset)" }
+  if ([string]::IsNullOrWhiteSpace($autocrlf)) { $autocrlf = "(unset)" }
+  Write-Host ""
+  Write-Host "=== GIT LINE-ENDINGS ==="
+  Write-Host ("core.safecrlf : {0}" -f $safecrlf)
+  Write-Host ("core.autocrlf : {0}" -f $autocrlf)
+  Write-Host (".gitattributes: {0}" -f (if ($hasGA) { "PRESENT" } else { "MISSING" }))
+  # END JP_VERIFY_EXTRAS
+
   BreakLine "VERIFY — PASS" -Pass -Thick 3
   Say "NO PASTE NEEDED (verify pass)."
 }
@@ -65,19 +81,3 @@ finally {
     BreakLine "STOP — NEXT COMMAND BELOW" -Thick 6
   }
 }
-
-# BEGIN JP_VERIFY_EXTRAS
-# Extra diagnostics: Git CRLF enforcement + safecrlf/autocrlf visibility
-try { $repoRoot = (git rev-parse --show-toplevel 2>$null) } catch { $repoRoot = $null }
-$ga = if ($repoRoot) { Join-Path $repoRoot ".gitattributes" } else { ".gitattributes" }
-$hasGA = Test-Path -LiteralPath $ga
-try { $safecrlf = (git config --local --get core.safecrlf 2>$null) } catch { $safecrlf = $null }
-try { $autocrlf = (git config --local --get core.autocrlf 2>$null) } catch { $autocrlf = $null }
-if ([string]::IsNullOrWhiteSpace($safecrlf)) { $safecrlf = "(unset)" }
-if ([string]::IsNullOrWhiteSpace($autocrlf)) { $autocrlf = "(unset)" }
-Write-Host ""
-Write-Host "=== GIT LINE-ENDINGS ==="
-Write-Host ("core.safecrlf : {0}" -f $safecrlf)
-Write-Host ("core.autocrlf : {0}" -f $autocrlf)
-Write-Host (".gitattributes: {0}" -f (if ($hasGA) { "PRESENT" } else { "MISSING" }))
-# END JP_VERIFY_EXTRAS
