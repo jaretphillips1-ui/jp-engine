@@ -17,9 +17,12 @@ function StopBar([string]$label, [switch]$Fail) {
     else { & $stop -Thick $StopThick -Color -Bold -Label $label | Out-Null }
   } else {
     Write-Host "==== $label ===="
-    Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
     Write-Host ""
   }
+
+  # Eye-catcher line that stays readable even when selection whitening happens
+  Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
+  Write-Host ""
 }
 
 try {
