@@ -1,0 +1,10 @@
+# JP ENGINE — line endings baseline (kills LF/CRLF warnings)
+* text=auto
+
+# Windows-first for scripts/docs
+*.ps1 text eol=crlf
+*.md  text eol=crlf
+
+# CI-first for workflows/config
+*.yml  text eol=lf
+*.yaml text eol=lf
