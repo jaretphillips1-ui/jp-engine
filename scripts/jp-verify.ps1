@@ -8,29 +8,39 @@ $repoRoot = Split-Path -Parent $repoRoot
 
 function Say([string]$msg) { if (-not $Quiet) { Write-Host $msg } }
 
-function BreakLine([string]$label, [switch]$Pass, [switch]$Fail) {
+function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3) {
   $bp = Join-Path $repoRoot "scripts\jp-break.ps1"
   if (Test-Path $bp) {
-    if ($Pass) { & $bp -Color -Pass -Thick 4 -Bold -Label $label | Out-Null }
-    elseif ($Fail) { & $bp -Color -Fail -Thick 4 -Bold -Label $label | Out-Null }
-    else { & $bp -Color -Thick 4 -Bold -Label $label | Out-Null }
+    if ($Pass) { & $bp -Color -Pass -Thick $Thick -Bold -Label $label | Out-Null }
+    elseif ($Fail) { & $bp -Color -Fail -Thick $Thick -Bold -Label $label | Out-Null }
+    else { & $bp -Color -Thick $Thick -Bold -Label $label | Out-Null }
   } else {
     Say "==== $label ===="
   }
 }
 
-$failed = $false
+$failed  = $false
 $failMsg = ""
 
 try {
-  BreakLine "VERIFY — START"
+  BreakLine "VERIFY — START" -Thick 3
   Say ("pwsh: " + $PSVersionTable.PSVersion.ToString())
+  Say ("repo: " + $repoRoot)
 
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git not found." }
   $branch = (git rev-parse --abbrev-ref HEAD) 2>$null
   if ($branch) { Say ("git branch: " + $branch.Trim()) }
 
-  BreakLine "VERIFY — PSScriptAnalyzer"
+  # Line ending drift signals (read-only)
+  BreakLine "VERIFY — LINE ENDINGS" -Thick 3
+  $ac = (git config --get core.autocrlf) 2>$null
+  $eol = (git config --get core.eol) 2>$null
+  if (-not $ac) { $ac = "(unset)" }
+  if (-not $eol) { $eol = "(unset)" }
+  Say ("git core.autocrlf: " + $ac.Trim())
+  Say ("git core.eol:      " + $eol.Trim())
+
+  BreakLine "VERIFY — PSScriptAnalyzer" -Thick 3
   if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
     Say "PSScriptAnalyzer not installed locally (OK). CI will install it."
   } else {
@@ -43,17 +53,15 @@ try {
     Say "PSScriptAnalyzer OK."
   }
 
-  BreakLine "VERIFY — PASS" -Pass
+  BreakLine "VERIFY — PASS" -Pass -Thick 3
   Say "NO PASTE NEEDED (verify pass)."
 }
 catch {
-  $failed = $true
+  $failed  = $true
   $failMsg = $_.Exception.Message
-  BreakLine "VERIFY — FAIL" -Fail
+  BreakLine "VERIFY — FAIL" -Fail -Thick 3
   Say ("PASTE NEEDED (verify fail): " + $failMsg)
 }
 finally {
-  $stop = Join-Path $repoRoot "scripts\jp-stop.ps1"
-  if (Test-Path $stop) { & $stop -Thick 6 -Label "STOP — NEXT COMMAND BELOW" | Out-Null }
-  else { BreakLine "STOP — NEXT COMMAND BELOW" }
+  BreakLine "STOP — NEXT COMMAND BELOW" -Thick 6
 }
