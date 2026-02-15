@@ -24,7 +24,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
   if ($branch) { Write-Host ("git branch: " + $branch.Trim()) }
 }
 
-$gate = Join-Path $repoRoot "scripts\jp-gate.ps1"
-if (-not (Test-Path $gate)) { throw "jp-gate.ps1 not found at $gate" }
+$smoke = Join-Path $repoRoot "scripts\jp-smoke.ps1"
+if (-not (Test-Path $smoke)) { throw "jp-smoke.ps1 not found at $smoke" }
 
-& $gate -StopThick $StopThick
+& $smoke -StopThick $StopThick
