@@ -1,3 +1,8 @@
+[CmdletBinding()]
+param(
+  [int]$StopThick = 12
+)
+
 $ErrorActionPreference = "Stop"
 
 function Write-Banner([string]$title) {
@@ -13,12 +18,9 @@ function Write-Banner([string]$title) {
   Write-Host ""
 }
 
-function Write-CutCue {
-  Write-Host ""
-  Write-Host "CUT HERE — PASTE BELOW ONLY"
-  Write-Host ""
-  Write-Host "PASTE FROM HERE ↓"
-}
+$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = Split-Path -Parent $repoRoot
+$stop = Join-Path $repoRoot "scripts\jp-stop.ps1"
 
 Write-Banner "HANDOFF PACK"
 
@@ -52,7 +54,13 @@ try {
   Write-Host (".gitattributes: {0}" -f $gaState)
 } catch {}
 
-Write-CutCue
+# CUT HERE stop + paste cue (centralized)
+if (Test-Path -LiteralPath $stop) {
+  & $stop -Thick $StopThick -Color -Bold -Label "CUT HERE — PASTE BELOW ONLY" -PasteCue | Out-Null
+} else {
+  Write-Host "==== STOP BAR (jp-stop missing) ===="
+  Write-Host ""
+}
 
 # Minimal chat-ready payload
 Write-Host ("PowerShell: {0}" -f $PSVersionTable.PSVersion.ToString())
@@ -64,3 +72,4 @@ Write-Host "Next action suggestion:"
 Write-Host "- Run: .\scripts\jp-start.ps1"
 Write-Host "- Then: .\scripts\jp-verify.ps1"
 Write-Host "- If any failure repeats 3x: stop and run read-pack dump before more edits"
+

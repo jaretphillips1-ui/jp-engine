@@ -12,7 +12,7 @@ $verify = Join-Path $repoRoot "scripts\jp-verify.ps1"
 $stop   = Join-Path $repoRoot "scripts\jp-stop.ps1"
 
 function StopBar([string]$label, [switch]$Fail) {
-  if (Test-Path $stop) {
+  if (Test-Path -LiteralPath $stop) {
     if ($Fail) {
       & $stop -Thick $StopThick -Color -Fail -Bold -Label $label -PasteCue | Out-Null
     } else {
@@ -21,13 +21,11 @@ function StopBar([string]$label, [switch]$Fail) {
   } else {
     Write-Host "==== $label ===="
     Write-Host ""
-    Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
-    Write-Host ""
   }
 }
 
 try {
-  if (Test-Path $verify) {
+  if (Test-Path -LiteralPath $verify) {
     & $verify -NoStop | Out-Null
   } else {
     Write-Host "jp-verify.ps1 not found."
@@ -43,3 +41,4 @@ catch {
   StopBar "CUT HERE — PASTE BELOW ONLY (FAIL)" -Fail
   throw
 }
+
