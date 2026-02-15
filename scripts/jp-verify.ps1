@@ -19,25 +19,39 @@ function BreakLine([string]$label, [switch]$Pass, [switch]$Fail) {
   }
 }
 
-BreakLine "VERIFY — START"
-Say ("pwsh: " + $PSVersionTable.PSVersion.ToString())
+$failed = $false
+$failMsg = ""
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git not found." }
-$branch = (git rev-parse --abbrev-ref HEAD) 2>$null
-if ($branch) { Say ("git branch: " + $branch.Trim()) }
+try {
+  BreakLine "VERIFY — START"
+  Say ("pwsh: " + $PSVersionTable.PSVersion.ToString())
 
-BreakLine "VERIFY — PSScriptAnalyzer"
-if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
-  Say "PSScriptAnalyzer not installed locally (OK). CI will install it."
-} else {
-  $issues = Invoke-ScriptAnalyzer -Path (Join-Path $repoRoot "scripts") -Recurse -Severity @('Error','Warning') -ErrorAction Stop
-  $errors = @($issues | Where-Object Severity -eq 'Error')
-  if ($errors.Count -gt 0) {
-    $errors | ForEach-Object { Write-Host ("ERROR: " + $_.RuleName + " — " + $_.Message + " (" + $_.ScriptName + ":" + $_.Line + ")") }
-    throw "PSScriptAnalyzer errors: $($errors.Count)."
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git not found." }
+  $branch = (git rev-parse --abbrev-ref HEAD) 2>$null
+  if ($branch) { Say ("git branch: " + $branch.Trim()) }
+
+  BreakLine "VERIFY — PSScriptAnalyzer"
+  if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+    Say "PSScriptAnalyzer not installed locally (OK). CI will install it."
+  } else {
+    $issues = Invoke-ScriptAnalyzer -Path (Join-Path $repoRoot "scripts") -Recurse -Severity @('Error','Warning') -ErrorAction Stop
+    $errors = @($issues | Where-Object Severity -eq 'Error')
+    if ($errors.Count -gt 0) {
+      $errors | ForEach-Object { Write-Host ("ERROR: " + $_.RuleName + " — " + $_.Message + " (" + $_.ScriptName + ":" + $_.Line + ")") }
+      throw "PSScriptAnalyzer errors: $($errors.Count)."
+    }
+    Say "PSScriptAnalyzer OK."
   }
-  Say "PSScriptAnalyzer OK."
-}
 
-BreakLine "VERIFY — PASS" -Pass
-Say "jp-verify complete."
+  BreakLine "VERIFY — PASS" -Pass
+  Say "NO PASTE NEEDED (verify pass)."
+}
+catch {
+  $failed = $true
+  $failMsg = $_.Exception.Message
+  BreakLine "VERIFY — FAIL" -Fail
+  Say ("PASTE NEEDED (verify fail): " + $failMsg)
+}
+finally {
+  BreakLine "STOP — NEXT COMMAND BELOW"
+}
