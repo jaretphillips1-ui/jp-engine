@@ -36,7 +36,7 @@ try {
   if (-not (Test-Path $verify)) { throw "jp-verify.ps1 not found at $verify" }
   if (-not (Test-Path $save))   { throw "jp-save.ps1 not found at $save" }
 
-  & $verify | Out-Null
+  & $verify -NoStop | Out-Null
   & $save -SaveRoot $SaveRoot | Out-Null
 
   git status

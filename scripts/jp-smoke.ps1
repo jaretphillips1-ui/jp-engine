@@ -27,7 +27,7 @@ function StopBar([string]$label, [switch]$Fail) {
 
 try {
   if (Test-Path $verify) {
-    & $verify | Out-Null
+    & $verify -NoStop | Out-Null
   } else {
     Write-Host "jp-verify.ps1 not found."
   }

@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param([switch]$Quiet)
+param(
+  [switch]$Quiet,
+  [switch]$NoStop
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -19,9 +22,6 @@ function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3
   }
 }
 
-$failed  = $false
-$failMsg = ""
-
 try {
   BreakLine "VERIFY — START" -Thick 3
   Say ("pwsh: " + $PSVersionTable.PSVersion.ToString())
@@ -33,9 +33,9 @@ try {
 
   # Line ending drift signals (read-only)
   BreakLine "VERIFY — LINE ENDINGS" -Thick 3
-  $ac = (git config --get core.autocrlf) 2>$null
+  $ac  = (git config --get core.autocrlf) 2>$null
   $eol = (git config --get core.eol) 2>$null
-  if (-not $ac) { $ac = "(unset)" }
+  if (-not $ac)  { $ac  = "(unset)" }
   if (-not $eol) { $eol = "(unset)" }
   Say ("git core.autocrlf: " + $ac.Trim())
   Say ("git core.eol:      " + $eol.Trim())
@@ -57,11 +57,11 @@ try {
   Say "NO PASTE NEEDED (verify pass)."
 }
 catch {
-  $failed  = $true
-  $failMsg = $_.Exception.Message
   BreakLine "VERIFY — FAIL" -Fail -Thick 3
-  Say ("PASTE NEEDED (verify fail): " + $failMsg)
+  Say ("PASTE NEEDED (verify fail): " + $_.Exception.Message)
 }
 finally {
-  BreakLine "STOP — NEXT COMMAND BELOW" -Thick 6
+  if (-not $NoStop) {
+    BreakLine "STOP — NEXT COMMAND BELOW" -Thick 6
+  }
 }
