@@ -13,16 +13,17 @@ $stop   = Join-Path $repoRoot "scripts\jp-stop.ps1"
 
 function StopBar([string]$label, [switch]$Fail) {
   if (Test-Path $stop) {
-    if ($Fail) { & $stop -Thick $StopThick -Color -Fail -Bold -Label $label | Out-Null }
-    else { & $stop -Thick $StopThick -Color -Bold -Label $label | Out-Null }
+    if ($Fail) {
+      & $stop -Thick $StopThick -Color -Fail -Bold -Label $label -PasteCue | Out-Null
+    } else {
+      & $stop -Thick $StopThick -Color -Bold -Label $label -PasteCue | Out-Null
+    }
   } else {
     Write-Host "==== $label ===="
     Write-Host ""
+    Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
+    Write-Host ""
   }
-
-  # Eye-catcher line that stays readable even when selection whitening happens
-  Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
-  Write-Host ""
 }
 
 try {
