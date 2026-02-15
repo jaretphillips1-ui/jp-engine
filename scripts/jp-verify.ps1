@@ -11,9 +11,9 @@ function Say([string]$msg) { if (-not $Quiet) { Write-Host $msg } }
 function BreakLine([string]$label, [switch]$Pass, [switch]$Fail) {
   $bp = Join-Path $repoRoot "scripts\jp-break.ps1"
   if (Test-Path $bp) {
-    if ($Pass) { & $bp -Color -Pass -Thick 3 -Bold -Label $label | Out-Null }
-    elseif ($Fail) { & $bp -Color -Fail -Thick 3 -Bold -Label $label | Out-Null }
-    else { & $bp -Color -Thick 3 -Bold -Label $label | Out-Null }
+    if ($Pass) { & $bp -Color -Pass -Thick 4 -Bold -Label $label | Out-Null }
+    elseif ($Fail) { & $bp -Color -Fail -Thick 4 -Bold -Label $label | Out-Null }
+    else { & $bp -Color -Thick 4 -Bold -Label $label | Out-Null }
   } else {
     Say "==== $label ===="
   }
@@ -53,5 +53,7 @@ catch {
   Say ("PASTE NEEDED (verify fail): " + $failMsg)
 }
 finally {
-  BreakLine "STOP — NEXT COMMAND BELOW"
+  $stop = Join-Path $repoRoot "scripts\jp-stop.ps1"
+  if (Test-Path $stop) { & $stop -Thick 6 -Label "STOP — NEXT COMMAND BELOW" | Out-Null }
+  else { BreakLine "STOP — NEXT COMMAND BELOW" }
 }
