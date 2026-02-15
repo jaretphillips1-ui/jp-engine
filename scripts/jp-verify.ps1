@@ -13,7 +13,7 @@ function Say([string]$msg) { if (-not $Quiet) { Write-Host $msg } }
 
 function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3) {
   $bp = Join-Path $repoRoot "scripts\jp-break.ps1"
-  if (Test-Path $bp) {
+  if (Test-Path -LiteralPath $bp) {
     if ($Pass) { & $bp -Color -Pass -Thick $Thick -Bold -Label $label | Out-Null }
     elseif ($Fail) { & $bp -Color -Fail -Thick $Thick -Bold -Label $label | Out-Null }
     else { & $bp -Color -Thick $Thick -Bold -Label $label | Out-Null }
@@ -53,7 +53,6 @@ try {
     Say "PSScriptAnalyzer OK."
   }
 
-  # BEGIN JP_VERIFY_EXTRAS
   # Extra diagnostics: Git CRLF enforcement + safecrlf/autocrlf visibility
   try { $top = (git rev-parse --show-toplevel 2>$null) } catch { $top = $null }
   $ga = if ($top) { Join-Path $top ".gitattributes" } else { ".gitattributes" }
@@ -62,13 +61,13 @@ try {
   try { $autocrlf = (git config --local --get core.autocrlf 2>$null) } catch { $autocrlf = $null }
   if ([string]::IsNullOrWhiteSpace($safecrlf)) { $safecrlf = "(unset)" }
   if ([string]::IsNullOrWhiteSpace($autocrlf)) { $autocrlf = "(unset)" }
+
   Write-Host ""
   Write-Host "=== GIT LINE-ENDINGS ==="
   Write-Host ("core.safecrlf : {0}" -f $safecrlf)
   Write-Host ("core.autocrlf : {0}" -f $autocrlf)
   $gaState = if ($hasGA) { "PRESENT" } else { "MISSING" }
-Write-Host (".gitattributes: {0}" -f $gaState)
-  # END JP_VERIFY_EXTRAS
+  Write-Host (".gitattributes: {0}" -f $gaState)
 
   BreakLine "VERIFY — PASS" -Pass -Thick 3
   Say "NO PASTE NEEDED (verify pass)."
@@ -76,9 +75,11 @@ Write-Host (".gitattributes: {0}" -f $gaState)
 catch {
   BreakLine "VERIFY — FAIL" -Fail -Thick 3
   Say ("PASTE NEEDED (verify fail): " + $_.Exception.Message)
+  throw   # IMPORTANT: do not swallow failures
 }
 finally {
   if (-not $NoStop) {
     BreakLine "STOP — NEXT COMMAND BELOW" -Thick 6
   }
 }
+
