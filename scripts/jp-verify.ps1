@@ -66,7 +66,8 @@ try {
   Write-Host "=== GIT LINE-ENDINGS ==="
   Write-Host ("core.safecrlf : {0}" -f $safecrlf)
   Write-Host ("core.autocrlf : {0}" -f $autocrlf)
-  Write-Host (".gitattributes: {0}" -f (if ($hasGA) { "PRESENT" } else { "MISSING" }))
+  $gaState = if ($hasGA) { "PRESENT" } else { "MISSING" }
+Write-Host (".gitattributes: {0}" -f $gaState)
   # END JP_VERIFY_EXTRAS
 
   BreakLine "VERIFY — PASS" -Pass -Thick 3
