@@ -11,10 +11,10 @@ $repoRoot = Split-Path -Parent $repoRoot
 
 $break = Join-Path $repoRoot "scripts\jp-break.ps1"
 if (Test-Path $break) {
-  & $break -Color -Bold -Thick $BannerThick -Label ("JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss")) | Out-Null
+  & $break -Color -Bold -Thick $BannerThick -Label ("⚪ JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss")) | Out-Null
 } else {
   Write-Host ""
-  Write-Host ("JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
+  Write-Host ("⚪ JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
 }
 
 Write-Host ("repo: " + $repoRoot)
