@@ -19,20 +19,21 @@ $repoRoot = Split-Path -Parent $repoRoot
 $break = Join-Path $repoRoot "scripts\jp-break.ps1"
 
 if (Test-Path $break) {
-  $args = @()
+  # Use a hashtable splat so named params bind correctly.
+  $p = @{
+    Thick = $Thick
+    Label = $Label
+  }
 
-  $args += @("-Thick", $Thick)
-  $args += @("-Label", $Label)
+  if ($Color) { $p.Color = $true }
+  if ($Bold)  { $p.Bold  = $true }
+  if ($Ascii) { $p.Ascii = $true }
 
-  if ($Color) { $args += "-Color" }
-  if ($Bold)  { $args += "-Bold" }
-  if ($Ascii) { $args += "-Ascii" }
+  if ($Pass)      { $p.Pass = $true }
+  elseif ($Warn)  { $p.Warn = $true }
+  elseif ($Fail)  { $p.Fail = $true }
 
-  if ($Pass) { $args += "-Pass" }
-  elseif ($Warn) { $args += "-Warn" }
-  elseif ($Fail) { $args += "-Fail" }
-
-  & $break @args | Out-Null
+  & $break @p | Out-Null
 } else {
   Write-Host ("==== " + $Label + " ====")
 }
