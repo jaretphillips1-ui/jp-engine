@@ -11,11 +11,14 @@ $repoRoot = Split-Path -Parent $repoRoot
 $verify = Join-Path $repoRoot "scripts\jp-verify.ps1"
 $stop   = Join-Path $repoRoot "scripts\jp-stop.ps1"
 
-function StopBar([string]$label) {
+function StopBar([string]$label, [switch]$Fail) {
   if (Test-Path $stop) {
-    & $stop -Thick $StopThick -Label $label | Out-Null
+    if ($Fail) { & $stop -Thick $StopThick -Color -Fail -Bold -Label $label | Out-Null }
+    else { & $stop -Thick $StopThick -Color -Bold -Label $label | Out-Null }
   } else {
     Write-Host "==== $label ===="
+    Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
+    Write-Host ""
   }
 }
 
@@ -33,6 +36,6 @@ try {
 }
 catch {
   Write-Host ("SMOKE FAIL: " + $_.Exception.Message)
-  StopBar "CUT HERE — PASTE BELOW ONLY (FAIL)"
+  StopBar "CUT HERE — PASTE BELOW ONLY (FAIL)" -Fail
   throw
 }
