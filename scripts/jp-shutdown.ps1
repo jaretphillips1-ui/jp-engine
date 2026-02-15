@@ -19,9 +19,13 @@ function StopBar([string]$label, [switch]$Fail) {
     else { & $stop -Thick $StopThick -Color -Bold -Label $label | Out-Null }
   } else {
     Write-Host "==== $label ===="
-    Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
-    Write-Host ""
   }
+}
+
+function PasteCue {
+  Write-Host ""
+  Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
+  Write-Host ""
 }
 
 try {
@@ -39,9 +43,11 @@ try {
   git log -1 --oneline
 
   StopBar "CUT HERE — PASTE BELOW ONLY"
+  PasteCue
 }
 catch {
   Write-Host ("JP SHUTDOWN FAIL: " + $_.Exception.Message)
   StopBar "CUT HERE — PASTE BELOW ONLY (FAIL)" -Fail
+  PasteCue
   throw
 }
