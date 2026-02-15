@@ -48,7 +48,8 @@ try {
   Write-Host ("core.safecrlf : {0}" -f $safecrlf)
   Write-Host ("core.autocrlf : {0}" -f $autocrlf)
   $ga = Join-Path (git rev-parse --show-toplevel) ".gitattributes"
-  Write-Host (".gitattributes: {0}" -f (if (Test-Path -LiteralPath $ga) { "PRESENT" } else { "MISSING" }))
+  $gaState = if (Test-Path -LiteralPath $ga) { "PRESENT" } else { "MISSING" }
+  Write-Host (".gitattributes: {0}" -f $gaState)
 } catch {}
 
 Write-CutCue
