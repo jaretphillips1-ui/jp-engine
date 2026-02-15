@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [int]$StopThick = 8
+  [int]$StopThick = 12
 )
 
 $ErrorActionPreference = "Stop"
