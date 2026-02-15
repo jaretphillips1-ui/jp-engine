@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-  [int]$StopThick = 12
+  [int]$StopThick = 12,
+  [int]$BannerThick = 6
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,8 +9,14 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $repoRoot
 
-Write-Host ""
-Write-Host ("JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
+$break = Join-Path $repoRoot "scripts\jp-break.ps1"
+if (Test-Path $break) {
+  & $break -Color -Bold -Thick $BannerThick -Label ("JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss")) | Out-Null
+} else {
+  Write-Host ""
+  Write-Host ("JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
+}
+
 Write-Host ("repo: " + $repoRoot)
 
 if (Get-Command git -ErrorAction SilentlyContinue) {
