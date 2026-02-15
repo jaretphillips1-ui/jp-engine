@@ -21,12 +21,9 @@ function StopBar([string]$label, [switch]$Fail, [switch]$PasteCue) {
       else { & $stop -Thick $StopThick -Color -Bold -Label $label | Out-Null }
     }
   } else {
+    # Minimal fallback: delimiter only. Never print the canonical paste cue here.
     Write-Host "==== $label ===="
     Write-Host ""
-    if ($PasteCue) {
-      Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
-      Write-Host ""
-    }
   }
 }
 
@@ -34,19 +31,16 @@ try {
   if (Test-Path -LiteralPath $verify) {
     & $verify -NoStop | Out-Null
   } else {
-    Write-Host "jp-verify.ps1 not found."
+    throw "jp-verify.ps1 not found."
   }
 
   git status
   git log -1 --oneline
 
-  # PASS: stop bar only (no paste cue)
   StopBar "STOP — NEXT COMMAND BELOW"
 }
 catch {
   Write-Host ("SMOKE FAIL: " + $_.Exception.Message)
-
-  # FAIL: show paste cue so user knows what to paste
   StopBar "CUT HERE — PASTE BELOW ONLY (FAIL)" -Fail -PasteCue
   throw
 }
