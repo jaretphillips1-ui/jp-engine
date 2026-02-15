@@ -19,21 +19,24 @@ $repoRoot = Split-Path -Parent $repoRoot
 $break = Join-Path $repoRoot "scripts\jp-break.ps1"
 
 if (Test-Path $break) {
-  $args = @("-Thick", $Thick, "-Bold:$Bold", "-Label", $Label)
+  $args = @()
+
+  $args += @("-Thick", $Thick)
+  $args += @("-Label", $Label)
+
   if ($Color) { $args += "-Color" }
-  if ($Pass)  { $args += "-Pass" }
+  if ($Bold)  { $args += "-Bold" }
+  if ($Ascii) { $args += "-Ascii" }
+
+  if ($Pass) { $args += "-Pass" }
   elseif ($Warn) { $args += "-Warn" }
   elseif ($Fail) { $args += "-Fail" }
-
-  # Char-set override (jp-break also supports JP_ASCII=1)
-  if ($Ascii) { $args += "-Ascii" }
 
   & $break @args | Out-Null
 } else {
   Write-Host ("==== " + $Label + " ====")
 }
 
-# small blank spacer for readability
 Write-Host ""
 
 if ($PasteCue) {
