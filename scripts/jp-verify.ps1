@@ -9,6 +9,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $repoRoot
 
+$stop = Join-Path $repoRoot "scripts\jp-stop.ps1"
+
 function Say([string]$msg) { if (-not $Quiet) { Write-Host $msg } }
 
 function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3) {
@@ -19,6 +21,14 @@ function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3
     else { & $bp -Color -Thick $Thick -Bold -Label $label | Out-Null }
   } else {
     Say "==== $label ===="
+  }
+}
+
+function StopLine([string]$label, [int]$Thick = 6) {
+  if (Test-Path -LiteralPath $stop) {
+    & $stop -Thick $Thick -Color -Bold -Label $label | Out-Null
+  } else {
+    BreakLine $label -Thick $Thick
   }
 }
 
@@ -79,7 +89,6 @@ catch {
 }
 finally {
   if (-not $NoStop) {
-    BreakLine "STOP — NEXT COMMAND BELOW" -Thick 6
+    StopLine "STOP — NEXT COMMAND BELOW" -Thick 6
   }
 }
-
