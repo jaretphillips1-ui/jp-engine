@@ -41,7 +41,7 @@ try {
   Invoke-JpStep -Label "VERIFY" -Command {
     if (-not (Test-Path -LiteralPath $verify)) { throw "jp-verify.ps1 not found." }
     & $verify -NoStop
-  } -ExpectRegex @("VERIFY — PASS","NO PASTE NEEDED") | Out-Null
+  } -ExpectRegex @("^VERIFY — PASS$","^NO PASTE NEEDED") | Out-Null
 
   Invoke-JpStep -Label "GIT STATUS" -Command { git status } -ExpectRegex @("working tree clean") -ShowOutputOnPass | Out-Null
   Invoke-JpStep -Label "GIT LOG"    -Command { git log -1 --oneline } -ExpectRegex @("^[0-9a-f]{7,40}\s") -ShowOutputOnPass | Out-Null
