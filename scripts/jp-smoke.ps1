@@ -15,13 +15,15 @@ $step   = Join-Path $repoRoot "scripts\jp-step.ps1"
 
 function StopBar([string]$label, [switch]$Fail, [switch]$PasteCue) {
   if (Test-Path -LiteralPath $stop) {
-    if ($Fail) {
-      if ($PasteCue) { & $stop -Thick $StopThick -Color -Fail -Bold -Label $label -PasteCue | Out-Null }
-      else { & $stop -Thick $StopThick -Color -Fail -Bold -Label $label | Out-Null }
-    } else {
-      if ($PasteCue) { & $stop -Thick $StopThick -Color -Bold -Label $label -PasteCue | Out-Null }
-      else { & $stop -Thick $StopThick -Color -Bold -Label $label | Out-Null }
+    $p = @{
+      Thick = $StopThick
+      Color = $true
+      Bold  = $true
+      Label = $label
     }
+    if ($Fail)     { $p.Fail     = $true }
+    if ($PasteCue) { $p.PasteCue = $true }
+    & $stop @p | Out-Null
   } else {
     Write-Host "==== $label ===="
     Write-Host ""
@@ -39,10 +41,10 @@ try {
   Invoke-JpStep -Label "VERIFY" -Command {
     if (-not (Test-Path -LiteralPath $verify)) { throw "jp-verify.ps1 not found." }
     & $verify -NoStop
-  } | Out-Null
+  } -ExpectRegex @("VERIFY — PASS","NO PASTE NEEDED") | Out-Null
 
-  Invoke-JpStep -Label "GIT STATUS" -Command { git status } -ShowOutputOnPass | Out-Null
-  Invoke-JpStep -Label "GIT LOG"    -Command { git log -1 --oneline } -ShowOutputOnPass | Out-Null
+  Invoke-JpStep -Label "GIT STATUS" -Command { git status } -ExpectRegex @("working tree clean") -ShowOutputOnPass | Out-Null
+  Invoke-JpStep -Label "GIT LOG"    -Command { git log -1 --oneline } -ExpectRegex @("^[0-9a-f]{7,40}\s") -ShowOutputOnPass | Out-Null
 
   StopBar "STOP — NEXT COMMAND BELOW"
 }
