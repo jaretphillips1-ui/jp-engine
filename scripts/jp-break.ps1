@@ -22,7 +22,7 @@ $useAscii  = $Ascii -or ($env:JP_ASCII -eq "1")
 $compact   = ($env:JP_COMPACT -eq "1")
 
 # Compact mode: cap thickness to keep output lighter.
-if ($compact) { $Thick = [Math]::Min($Thick, 3) }
+if ($compact) { $Thick = [Math]::Min($Thick, 4) }
 
 $lineChar = if ($useAscii) { "=" } else { "═" }
 
