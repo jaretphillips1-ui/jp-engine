@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [int]$Thick = 12,
+  [int]$Thick = 4,
   [switch]$Color,
   [switch]$Pass,
   [switch]$Warn,

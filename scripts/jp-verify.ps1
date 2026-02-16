@@ -15,7 +15,7 @@ $stopScript = Join-Path $repoRoot "scripts\jp-stop.ps1"
 function Say([string]$msg)  { if (-not $Quiet) { Write-Host   $msg } }
 function Emit([string]$msg) { Write-Output $msg }
 
-function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3) {
+function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 4) {
   $bp = Join-Path $repoRoot "scripts\jp-break.ps1"
   if (Test-Path -LiteralPath $bp) {
     if ($Pass) { & $bp -Color -Pass -Thick $Thick -Bold -Label $label | Out-Null }
@@ -29,7 +29,7 @@ function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3
 $didFail = $false
 
 try {
-  BreakLine "VERIFY — START" -Thick 3
+  BreakLine "VERIFY — START" -Thick 4
   Say ("pwsh: " + $PSVersionTable.PSVersion.ToString())
   Say ("repo: " + $repoRoot)
 
@@ -37,7 +37,7 @@ try {
   $branch = (git rev-parse --abbrev-ref HEAD) 2>$null
   if ($branch) { Say ("git branch: " + $branch.Trim()) }
 
-  BreakLine "VERIFY — TOOLS" -Thick 3
+  BreakLine "VERIFY — TOOLS" -Thick 4
 
   $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
   if (-not $ghCmd) { throw "gh not found (GitHub CLI). Install or add to PATH." }
@@ -49,7 +49,7 @@ try {
   $osslLine = (& openssl version 2>$null | Select-Object -First 1)
   if ($osslLine) { Say ("openssl: " + $osslLine.Trim()) } else { Say "openssl: (version unknown)" }
 
-  BreakLine "VERIFY — LINE ENDINGS" -Thick 3
+  BreakLine "VERIFY — LINE ENDINGS" -Thick 4
   $ac  = (git config --get core.autocrlf) 2>$null
   $eol = (git config --get core.eol) 2>$null
   if (-not $ac)  { $ac  = "(unset)" }
@@ -57,7 +57,7 @@ try {
   Say ("git core.autocrlf: " + $ac.Trim())
   Say ("git core.eol:      " + $eol.Trim())
 
-  BreakLine "VERIFY — PSScriptAnalyzer" -Thick 3
+  BreakLine "VERIFY — PSScriptAnalyzer" -Thick 4
   if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
     Say "PSScriptAnalyzer not installed locally (OK). CI will install it."
   } else {
@@ -85,7 +85,7 @@ try {
   $gaState = if ($hasGA) { "PRESENT" } else { "MISSING" }
   Write-Host (".gitattributes: {0}" -f $gaState)
 
-  BreakLine "VERIFY — PASS" -Pass -Thick 3
+  BreakLine "VERIFY — PASS" -Pass -Thick 4
   Say "NO PASTE NEEDED (verify pass)."
 
   Emit "VERIFY — PASS"
@@ -93,7 +93,7 @@ try {
 }
 catch {
   $didFail = $true
-  BreakLine "VERIFY — FAIL" -Fail -Thick 3
+  BreakLine "VERIFY — FAIL" -Fail -Thick 4
   Say ("ERROR: " + $_.Exception.Message)
 
   Emit "VERIFY — FAIL"
@@ -105,9 +105,9 @@ finally {
   if (-not $NoStop) {
     if (Test-Path -LiteralPath $stopScript) {
       if ($didFail) {
-        & $stopScript -Thick 12 -Color -Fail -Bold -Label "CUT HERE — PASTE BELOW ONLY (VERIFY FAIL)" -PasteCue | Out-Null
+        & $stopScript -Thick 4 -Color -Fail -Bold -Label "CUT HERE — PASTE BELOW ONLY (VERIFY FAIL)" -PasteCue | Out-Null
       } else {
-        & $stopScript -Thick 6 -Color -Bold -Label "STOP — NEXT COMMAND BELOW" | Out-Null
+        & $stopScript -Thick 4 -Color -Bold -Label "STOP — NEXT COMMAND BELOW" | Out-Null
       }
     } else {
       if ($didFail) {

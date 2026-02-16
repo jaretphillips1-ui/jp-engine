@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [int]$StopThick = 12
+  [int]$StopThick = 4
 )
 
 Set-StrictMode -Version Latest

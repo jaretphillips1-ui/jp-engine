@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-  [int]$StopThick = 12,
-  [int]$BannerThick = 6
+  [int]$StopThick = 4,
+  [int]$BannerThick = 4
 )
 
 Set-StrictMode -Version Latest
