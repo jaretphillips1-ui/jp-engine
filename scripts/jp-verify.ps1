@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $repoRoot
 
-$stop = Join-Path $repoRoot "scripts\jp-stop.ps1"
+$stopScript = Join-Path $repoRoot "scripts\jp-stop.ps1"
 
 function Say([string]$msg) { if (-not $Quiet) { Write-Host $msg } }
 
@@ -24,13 +24,24 @@ function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3
   }
 }
 
-function StopLine([string]$label, [int]$Thick = 6) {
-  if (Test-Path -LiteralPath $stop) {
-    & $stop -Thick $Thick -Color -Bold -Label $label | Out-Null
+function StopBar([string]$label, [int]$Thick = 6, [switch]$Fail, [switch]$PasteCue) {
+  if (Test-Path -LiteralPath $stopScript) {
+    $p = @{
+      Thick = $Thick
+      Color = $true
+      Bold  = $true
+      Label = $label
+    }
+    if ($Fail)     { $p.Fail     = $true }
+    if ($PasteCue) { $p.PasteCue = $true }
+
+    & $stopScript @p | Out-Null
   } else {
     BreakLine $label -Thick $Thick
   }
 }
+
+$didFail = $false
 
 try {
   BreakLine "VERIFY — START" -Thick 3
@@ -83,12 +94,17 @@ try {
   Say "NO PASTE NEEDED (verify pass)."
 }
 catch {
+  $didFail = $true
   BreakLine "VERIFY — FAIL" -Fail -Thick 3
-  Say ("PASTE NEEDED (verify fail): " + $_.Exception.Message)
+  Say ("ERROR: " + $_.Exception.Message)
   throw   # IMPORTANT: do not swallow failures
 }
 finally {
   if (-not $NoStop) {
-    StopLine "STOP — NEXT COMMAND BELOW" -Thick 6
+    if ($didFail) {
+      StopBar "CUT HERE — PASTE BELOW ONLY (VERIFY FAIL)" -Thick 12 -Fail -PasteCue
+    } else {
+      StopBar "STOP — NEXT COMMAND BELOW" -Thick 6
+    }
   }
 }
