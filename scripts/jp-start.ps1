@@ -4,13 +4,14 @@ param(
   [int]$BannerThick = 6
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $repoRoot
 
 $break = Join-Path $repoRoot "scripts\jp-break.ps1"
-if (Test-Path $break) {
+if (Test-Path -LiteralPath $break) {
   & $break -Color -Bold -Thick $BannerThick -Label ("⚪ JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss")) | Out-Null
 } else {
   Write-Host ""
@@ -25,6 +26,6 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 }
 
 $smoke = Join-Path $repoRoot "scripts\jp-smoke.ps1"
-if (-not (Test-Path $smoke)) { throw "jp-smoke.ps1 not found at $smoke" }
+if (-not (Test-Path -LiteralPath $smoke)) { throw "jp-smoke.ps1 not found at $smoke" }
 
 & $smoke -StopThick $StopThick
