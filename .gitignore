@@ -17,3 +17,5 @@ _DROP/
 # PowerShell module cache (if ever used locally)
 Modules/
 .patch_backups/
+logs/
+scripts/jp-validate.ps1
