@@ -12,7 +12,8 @@ $repoRoot = Split-Path -Parent $repoRoot
 
 $stopScript = Join-Path $repoRoot "scripts\jp-stop.ps1"
 
-function Say([string]$msg) { if (-not $Quiet) { Write-Host $msg } }
+function Say([string]$msg)  { if (-not $Quiet) { Write-Host   $msg } }
+function Emit([string]$msg) { Write-Output $msg }
 
 function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3) {
   $bp = Join-Path $repoRoot "scripts\jp-break.ps1"
@@ -53,7 +54,6 @@ try {
   $branch = (git rev-parse --abbrev-ref HEAD) 2>$null
   if ($branch) { Say ("git branch: " + $branch.Trim()) }
 
-  # Line ending drift signals (read-only)
   BreakLine "VERIFY — LINE ENDINGS" -Thick 3
   $ac  = (git config --get core.autocrlf) 2>$null
   $eol = (git config --get core.eol) 2>$null
@@ -75,7 +75,6 @@ try {
     Say "PSScriptAnalyzer OK."
   }
 
-  # Extra diagnostics: Git CRLF enforcement + safecrlf/autocrlf visibility
   try { $top = (git rev-parse --show-toplevel 2>$null) } catch { $top = $null }
   $ga = if ($top) { Join-Path $top ".gitattributes" } else { ".gitattributes" }
   $hasGA = Test-Path -LiteralPath $ga
@@ -93,12 +92,19 @@ try {
 
   BreakLine "VERIFY — PASS" -Pass -Thick 3
   Say "NO PASTE NEEDED (verify pass)."
+
+  Emit "VERIFY — PASS"
+  Emit "NO PASTE NEEDED (verify pass)."
 }
 catch {
   $didFail = $true
   BreakLine "VERIFY — FAIL" -Fail -Thick 3
   Say ("ERROR: " + $_.Exception.Message)
-  throw   # IMPORTANT: do not swallow failures
+
+  Emit "VERIFY — FAIL"
+  Emit ("ERROR: " + $_.Exception.Message)
+
+  throw
 }
 finally {
   if (-not $NoStop) {
