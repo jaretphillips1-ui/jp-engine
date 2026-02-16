@@ -4,6 +4,7 @@ param(
   [switch]$NoStop
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
