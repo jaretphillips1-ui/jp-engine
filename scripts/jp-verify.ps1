@@ -26,23 +26,6 @@ function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3
   }
 }
 
-function StopBar([string]$label, [int]$Thick = 6, [switch]$Fail, [switch]$PasteCue) {
-  if (Test-Path -LiteralPath $stopScript) {
-    $p = @{
-      Thick = $Thick
-      Color = $true
-      Bold  = $true
-      Label = $label
-    }
-    if ($Fail)     { $p.Fail     = $true }
-    if ($PasteCue) { $p.PasteCue = $true }
-
-    & $stopScript @p | Out-Null
-  } else {
-    BreakLine $label -Thick $Thick
-  }
-}
-
 $didFail = $false
 
 try {
@@ -108,10 +91,22 @@ catch {
 }
 finally {
   if (-not $NoStop) {
-    if ($didFail) {
-      StopBar "CUT HERE — PASTE BELOW ONLY (VERIFY FAIL)" -Thick 12 -Fail -PasteCue
+    if (Test-Path -LiteralPath $stopScript) {
+      if ($didFail) {
+        & $stopScript -Thick 12 -Color -Fail -Bold -Label "CUT HERE — PASTE BELOW ONLY (VERIFY FAIL)" -PasteCue | Out-Null
+      } else {
+        & $stopScript -Thick 6 -Color -Bold -Label "STOP — NEXT COMMAND BELOW" | Out-Null
+      }
     } else {
-      StopBar "STOP — NEXT COMMAND BELOW" -Thick 6
+      if ($didFail) {
+        Write-Host "==== CUT HERE — PASTE BELOW ONLY (VERIFY FAIL) ===="
+        Write-Host ""
+        Write-Host "PASTE BELOW ↓ (copy only what’s below this line when asked)"
+        Write-Host ""
+      } else {
+        Write-Host "==== STOP — NEXT COMMAND BELOW ===="
+        Write-Host ""
+      }
     }
   }
 }

@@ -4,6 +4,7 @@ param(
   [int]$StopThick = 12
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -13,19 +14,6 @@ $verify = Join-Path $repoRoot "scripts\jp-verify.ps1"
 $save   = Join-Path $repoRoot "scripts\jp-save.ps1"
 $stop   = Join-Path $repoRoot "scripts\jp-stop.ps1"
 $step   = Join-Path $repoRoot "scripts\jp-step.ps1"
-
-function StopBar([string]$label, [int]$Thick = 12, [switch]$Fail, [switch]$PasteCue) {
-  if (Test-Path -LiteralPath $stop) {
-    if ($Fail) {
-      & $stop -Thick $Thick -Color -Fail -Bold -Label $label -PasteCue:$PasteCue | Out-Null
-    } else {
-      & $stop -Thick $Thick -Color -Bold -Label $label -PasteCue:$PasteCue | Out-Null
-    }
-  } else {
-    Write-Host "==== STOP BAR (jp-stop missing) ===="
-    Write-Host ""
-  }
-}
 
 try {
   Write-Host ""
@@ -49,10 +37,24 @@ try {
   Invoke-JpStep -Label "GIT STATUS" -Command { git status } -ExpectRegex @("working tree clean") -ShowOutputOnPass | Out-Null
   Invoke-JpStep -Label "GIT LOG"    -Command { git log -1 --oneline } -ExpectRegex @("^[0-9a-f]{7,40}\s") -ShowOutputOnPass | Out-Null
 
-  StopBar "STOP — NEXT COMMAND BELOW" -Thick 6
+  if (Test-Path -LiteralPath $stop) {
+    & $stop -Thick 6 -Color -Bold -Label "STOP — NEXT COMMAND BELOW" | Out-Null
+  } else {
+    Write-Host "==== STOP — NEXT COMMAND BELOW ===="
+    Write-Host ""
+  }
 }
 catch {
   Write-Host ("JP SHUTDOWN FAIL: " + $_.Exception.Message)
-  StopBar "CUT HERE — PASTE BELOW ONLY (FAIL)" -Thick $StopThick -Fail -PasteCue
+
+  if (Test-Path -LiteralPath $stop) {
+    & $stop -Thick $StopThick -Color -Fail -Bold -Label "CUT HERE — PASTE BELOW ONLY (FAIL)" -PasteCue | Out-Null
+  } else {
+    Write-Host "==== CUT HERE — PASTE BELOW ONLY (FAIL) ===="
+    Write-Host ""
+    Write-Host "PASTE BELOW ↓ (copy only what’s below this line when asked)"
+    Write-Host ""
+  }
+
   throw
 }

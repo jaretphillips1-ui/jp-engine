@@ -3,6 +3,7 @@ param(
   [int]$StopThick = 12
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -19,22 +20,6 @@ function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 3
   } else {
     Write-Host ""
     Write-Host "==== $label ===="
-  }
-}
-
-function StopBar([string]$label, [switch]$Fail, [switch]$PasteCue) {
-  if (Test-Path -LiteralPath $stop) {
-    $p = @{
-      Thick = $StopThick
-      Color = $true
-      Bold  = $true
-      Label = $label
-    }
-    if ($Fail) { $p.Fail = $true }
-    if ($PasteCue) { $p.PasteCue = $true }
-    & $stop @p | Out-Null
-  } else {
-    BreakLine $label -Thick 6
   }
 }
 
@@ -71,7 +56,14 @@ TryWrite {
   Write-Host (".gitattributes: {0}" -f $gaState)
 }
 
-StopBar "CUT HERE — PASTE BELOW ONLY" -PasteCue
+if (Test-Path -LiteralPath $stop) {
+  & $stop -Thick $StopThick -Color -Bold -Label "CUT HERE — PASTE BELOW ONLY" -PasteCue | Out-Null
+} else {
+  BreakLine "CUT HERE — PASTE BELOW ONLY" -Thick 6
+  Write-Host ""
+  Write-Host "PASTE BELOW ↓ (copy only what’s below this line when asked)"
+  Write-Host ""
+}
 
 # Minimal chat-ready payload (always AFTER the cut bar)
 Write-Host ("PowerShell: {0}" -f $PSVersionTable.PSVersion.ToString())
@@ -84,4 +76,8 @@ Write-Host "- .\scripts\jp-start.ps1"
 Write-Host "- .\scripts\jp-verify.ps1"
 Write-Host "- If same failure repeats 3x: STOP and run read-pack before edits"
 
-StopBar "STOP — HANDOFF COMPLETE"
+if (Test-Path -LiteralPath $stop) {
+  & $stop -Thick $StopThick -Color -Bold -Label "STOP — HANDOFF COMPLETE" | Out-Null
+} else {
+  BreakLine "STOP — HANDOFF COMPLETE" -Thick 6
+}
