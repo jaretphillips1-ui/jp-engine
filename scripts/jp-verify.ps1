@@ -37,6 +37,18 @@ try {
   $branch = (git rev-parse --abbrev-ref HEAD) 2>$null
   if ($branch) { Say ("git branch: " + $branch.Trim()) }
 
+  BreakLine "VERIFY — TOOLS" -Thick 3
+
+  $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
+  if (-not $ghCmd) { throw "gh not found (GitHub CLI). Install or add to PATH." }
+  $ghLine = (& gh --version 2>$null | Select-Object -First 1)
+  if ($ghLine) { Say ("gh: " + $ghLine.Trim()) } else { Say "gh: (version unknown)" }
+
+  $osslCmd = Get-Command openssl -ErrorAction SilentlyContinue
+  if (-not $osslCmd) { throw "openssl not found. Install or add to PATH." }
+  $osslLine = (& openssl version 2>$null | Select-Object -First 1)
+  if ($osslLine) { Say ("openssl: " + $osslLine.Trim()) } else { Say "openssl: (version unknown)" }
+
   BreakLine "VERIFY — LINE ENDINGS" -Thick 3
   $ac  = (git config --get core.autocrlf) 2>$null
   $eol = (git config --get core.eol) 2>$null
