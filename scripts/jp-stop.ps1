@@ -18,7 +18,7 @@ $repoRoot = Split-Path -Parent $repoRoot
 
 $break = Join-Path $repoRoot "scripts\jp-break.ps1"
 
-if (Test-Path $break) {
+if (Test-Path -LiteralPath $break) {
   # Use a hashtable splat so named params bind correctly.
   $p = @{
     Thick = $Thick
@@ -38,9 +38,10 @@ if (Test-Path $break) {
   Write-Host ("==== " + $Label + " ====")
 }
 
+# Keep spacing light: only one blank line.
 Write-Host ""
 
 if ($PasteCue) {
-  Write-Host "PASTE FROM HERE ↓ (copy only what’s below this line when asked)"
+  Write-Host "PASTE BELOW ↓ (copy only what’s below this line when asked)"
   Write-Host ""
 }

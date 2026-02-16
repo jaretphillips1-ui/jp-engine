@@ -15,11 +15,18 @@ $ErrorActionPreference = "Stop"
 $w = 80
 try { $w = [Math]::Max(40, $Host.UI.RawUI.WindowSize.Width) } catch { }
 
-# Char set: box-drawing by default, ASCII fallback via -Ascii or JP_ASCII=1
-$useAscii = $Ascii -or ($env:JP_ASCII -eq "1")
+# Global loosening knobs:
+# - JP_ASCII=1    => ASCII '='
+# - JP_COMPACT=1  => reduce thickness + simpler look
+$useAscii  = $Ascii -or ($env:JP_ASCII -eq "1")
+$compact   = ($env:JP_COMPACT -eq "1")
+
+# Compact mode: cap thickness to keep output lighter.
+if ($compact) { $Thick = [Math]::Min($Thick, 3) }
+
 $lineChar = if ($useAscii) { "=" } else { "═" }
 
-# Color is done via Write-Host -ForegroundColor (NOT ANSI escapes)
+# Color via Write-Host -ForegroundColor (no ANSI escapes)
 $fg = $null
 if ($Color) {
   if ($Pass) { $fg = 'Green' }
@@ -28,7 +35,7 @@ if ($Color) {
   else { $fg = 'Cyan' }
 }
 
-# Stoplight icons (always visible if emoji renders)
+# Stoplight icon prefix (auto-added when using Pass/Warn/Fail)
 $icon = ""
 if ($Pass) { $icon = "🟢 " }
 elseif ($Warn) { $icon = "🟡 " }
@@ -39,19 +46,24 @@ $line = ($lineChar * $w)
 $labelText = $Label.Trim()
 if ($labelText) {
   $labelLine = "  $icon$labelText  "
-  if ($labelLine.Length -lt $w) {
-    $padTotal = $w - $labelLine.Length
-    $padLeft  = [Math]::Floor($padTotal / 2)
-    $padRight = $padTotal - $padLeft
-    $labelLine = ($lineChar * $padLeft) + $labelLine + ($lineChar * $padRight)
+
+  # Compact: don't try to perfectly center; keep it readable.
+  if ($compact) {
+    if ($labelLine.Length -gt $w) { $labelLine = $labelLine.Substring(0, $w) }
   } else {
-    $labelLine = $labelLine.Substring(0, $w)
+    if ($labelLine.Length -lt $w) {
+      $padTotal = $w - $labelLine.Length
+      $padLeft  = [Math]::Floor($padTotal / 2)
+      $padRight = $padTotal - $padLeft
+      $labelLine = ($lineChar * $padLeft) + $labelLine + ($lineChar * $padRight)
+    } else {
+      $labelLine = $labelLine.Substring(0, $w)
+    }
   }
 }
 
 function Format-Bold([string]$s) {
   if (-not $Bold) { return $s }
-  # PSStyle bold uses ANSI; if host suppresses it, this safely degrades to plain text.
   try { return "$($PSStyle.Bold)$s$($PSStyle.Reset)" } catch { return $s }
 }
 
