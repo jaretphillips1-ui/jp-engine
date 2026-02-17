@@ -1,120 +1,172 @@
+<#
+JP ENGINE — jp-post-merge-cleanup.ps1
+Post-merge housekeeping (lightweight, safe, re-runnable)
+
+Goals:
+- Keep repo tidy without creating “extra mess”
+- Remove stale local branches that are merged or have gone upstream
+- Prune remotes
+- Confirm master is clean
+
+Notes:
+- Never deletes master
+- Only deletes local branches that are:
+  - merged into master, OR
+  - tracking a remote that is marked as gone
+- Designed to be safe to re-run
+#>
+
 [CmdletBinding()]
 param(
-  # Remote/local branch to delete after merge, e.g. "docs/jp-blueprint-20260217-1527"
-  [string]$BranchToDelete,
+  [Parameter(Mandatory = $false)]
+  [switch]$NoDeleteMerged,
 
-  # Continue even if working tree is dirty (NOT recommended)
-  [switch]$Force
+  [Parameter(Mandatory = $false)]
+  [switch]$NoDeleteGone,
+
+  [Parameter(Mandatory = $false)]
+  [switch]$NoPrune
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Assert-RepoRoot {
-  if (-not (Test-Path -LiteralPath (Join-Path (Get-Location).Path '.git'))) {
-    throw "Gate failed: run from repo root."
+function Fail([string]$Message) { throw $Message }
+
+function Find-RepoRootFromScript {
+  $root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')
+  return $root.Path
+}
+
+function Assert-JPRepoRoot([string]$Root) {
+  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git'))) { Fail "JP guard: Not a git repo root: missing .git at '$Root'." }
+  if (-not (Test-Path -LiteralPath (Join-Path $Root 'docs\00_JP_INDEX.md'))) { Fail "JP guard: Not jp-engine: missing docs\00_JP_INDEX.md at '$Root'." }
+}
+
+function Git-Run([string[]]$GitArgs) {
+  & git @GitArgs | Out-Host
+  if ($LASTEXITCODE -ne 0) { Fail ("Command failed: git " + ($GitArgs -join ' ')) }
+}
+
+function Git-Out([string[]]$GitArgs) {
+  $out = & git @GitArgs 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    if ($out) { Write-Host ($out | Out-String).TrimEnd() }
+    Fail ("Command failed: git " + ($GitArgs -join ' '))
+  }
+  return ($out | Out-String)
+}
+
+function Assert-OnMaster {
+  $b = (Git-Out @('branch','--show-current')).Trim()
+  if ($b -ne 'master') { Fail ("JP guard: Post-merge cleanup must run on master. Current: " + $b) }
+}
+
+function Assert-CleanTree {
+  $s = (Git-Out @('status','--porcelain')).Trim()
+  if (-not [string]::IsNullOrWhiteSpace($s)) {
+    Write-Host $s
+    Fail "JP guard: Working tree must be clean for post-merge cleanup."
   }
 }
 
-function Get-OwnerRepo {
-  $origin = (git config --get remote.origin.url).Trim()
-  if (-not $origin) { throw "Could not read remote.origin.url" }
-
-  $m = [regex]::Match($origin, 'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/.]+)(?:\.git)?$')
-  if (-not $m.Success) { throw "Could not parse owner/repo from origin: $origin" }
-
-  [pscustomobject]@{
-    Owner = $m.Groups['owner'].Value
-    Repo  = $m.Groups['repo'].Value
+function Get-LocalMergedBranches {
+  # Includes branches merged into current HEAD (master)
+  $raw = Git-Out @('branch','--merged')
+  $lines = $raw -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+  # Lines may start with '* ' for current branch
+  $branches = foreach ($l in $lines) {
+    $name = $l -replace '^\*\s+', ''
+    $name = $name.Trim()
+    if ($name) { $name }
   }
+  return $branches | Select-Object -Unique
 }
 
-function Assert-CleanOrForce {
-  if ($Force) { return }
-  $dirty = (git status --porcelain)
-  if ($dirty) {
-    throw "Working tree is not clean. Commit/stash first or rerun with -Force."
+function Get-LocalGoneBranches {
+  # Looks for: "branchName  abc123 [origin/branchName: gone] message"
+  $raw = Git-Out @('branch','-vv')
+  $lines = $raw -split "`r?`n" | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ }
+  $gone = foreach ($l in $lines) {
+    # Strip leading "* " or "  "
+    $t = $l.TrimStart()
+    if ($t.StartsWith('* ')) { $t = $t.Substring(2) }
+    # branch name is first token
+    $parts = $t -split '\s+'
+    if ($parts.Count -ge 1) {
+      $branch = $parts[0]
+      if ($l -match '\[.*:\s*gone\]') { $branch }
+    }
   }
+  return $gone | Where-Object { $_ } | Select-Object -Unique
 }
 
-function Delete-RemoteBranchIfRequested {
-  param([string]$Branch)
+function Delete-LocalBranchSafe([string]$Branch) {
+  if ([string]::IsNullOrWhiteSpace($Branch)) { return }
+  if ($Branch -eq 'master') { return }
+  # Only delete if it actually exists locally
+  $exists = (Git-Out @('branch','--list',$Branch)).Trim()
+  if ([string]::IsNullOrWhiteSpace($exists)) { return }
 
-  if (-not $Branch) { return }
-
-  # If gh isn't available, we still do the local parts safely.
-  $gh = Get-Command gh -ErrorAction SilentlyContinue
-  if (-not $gh) {
-    Write-Warning "gh CLI not found. Skipping remote branch delete for '$Branch'."
-    return
-  }
-
-  $or = Get-OwnerRepo
-
-  # Branch names include '/', so encode safely for the API path segment
-  $encoded = [System.Uri]::EscapeDataString($Branch)
-
-  Write-Host ""
-  Write-Host "Deleting remote branch (if it exists): origin/$Branch" -ForegroundColor Cyan
-
-  # DELETE /repos/{owner}/{repo}/git/refs/heads/{ref}
-  # If it doesn't exist, GitHub returns 422; we treat that as "already gone".
-  $endpoint = "/repos/$($or.Owner)/$($or.Repo)/git/refs/heads/$encoded"
-
-  $p = Start-Process -FilePath "gh" -ArgumentList @("api", $endpoint, "-X", "DELETE") -NoNewWindow -PassThru -Wait -ErrorAction SilentlyContinue
-  if ($p.ExitCode -eq 0) {
-    Write-Host "Remote branch deleted." -ForegroundColor Green
-  } else {
-    Write-Warning "Remote delete may have failed or branch already deleted (exit=$($p.ExitCode))."
-    Write-Warning "If needed, delete it manually in GitHub later."
-  }
+  Write-Host ("Deleting local branch: " + $Branch)
+  Git-Run @('branch','-D',$Branch)
 }
 
-function Delete-LocalBranchIfRequested {
-  param([string]$Branch)
+# ---- main ----
+$repoRoot = Find-RepoRootFromScript
+Assert-JPRepoRoot -Root $repoRoot
+Set-Location -LiteralPath $repoRoot
 
-  if (-not $Branch) { return }
+Write-Host "JP Post-Merge Cleanup — repo root: $repoRoot"
+& git --version | Out-Host
+if ($LASTEXITCODE -ne 0) { Fail "JP guard: git is required but failed to run." }
 
-  # Never delete the current branch
-  $current = (git branch --show-current).Trim()
-  if ($current -eq $Branch) {
-    throw "Refusing to delete the currently checked out branch: $Branch"
-  }
+Assert-OnMaster
+Assert-CleanTree
 
-  # Only delete if it exists locally
-  $exists = $false
-  git show-ref --verify --quiet ("refs/heads/{0}" -f $Branch)
-  if ($LASTEXITCODE -eq 0) { $exists = $true }
-
-  if ($exists) {
-    Write-Host "Deleting local branch: $Branch" -ForegroundColor Cyan
-    git branch -D -- $Branch
-  } else {
-    Write-Host "Local branch not present: $Branch (skipping)" -ForegroundColor DarkGray
-  }
+if (-not $NoPrune) {
+  Write-Host "Pruning remotes…"
+  Git-Run @('fetch','--prune')
 }
 
-# ---- Main ----
-Assert-RepoRoot
-Assert-CleanOrForce
+$deleted = @()
+
+if (-not $NoDeleteGone) {
+  $gone = Get-LocalGoneBranches | Where-Object { $_ -ne 'master' }
+  foreach ($b in $gone) {
+    Delete-LocalBranchSafe -Branch $b
+    $deleted += $b
+  }
+} else {
+  Write-Host "Skipping delete of 'gone' branches (-NoDeleteGone)."
+}
+
+if (-not $NoDeleteMerged) {
+  $merged = Get-LocalMergedBranches | Where-Object { $_ -ne 'master' }
+  foreach ($b in $merged) {
+    Delete-LocalBranchSafe -Branch $b
+    $deleted += $b
+  }
+} else {
+  Write-Host "Skipping delete of merged branches (-NoDeleteMerged)."
+}
+
+# Final sanity
+Assert-OnMaster
+Assert-CleanTree
 
 Write-Host ""
-Write-Host "Fetch + prune..." -ForegroundColor Cyan
-git fetch --prune origin
-
+Write-Host "DONE ✅"
+if ($deleted.Count -gt 0) {
+  $uniq = $deleted | Where-Object { $_ } | Select-Object -Unique
+  Write-Host ("Deleted local branches: " + ($uniq -join ', '))
+} else {
+  Write-Host "Deleted local branches: (none)"
+}
+Write-Host "Master is synced and clean."
 Write-Host ""
-Write-Host "Switch to master + fast-forward..." -ForegroundColor Cyan
-git checkout master
-git pull --ff-only origin master
-
-Delete-RemoteBranchIfRequested -Branch $BranchToDelete
-
-Write-Host ""
-Write-Host "Prune again (after possible remote delete)..." -ForegroundColor Cyan
-git fetch --prune origin
-
-Delete-LocalBranchIfRequested -Branch $BranchToDelete
-
-Write-Host ""
-Write-Host "Status + branches:" -ForegroundColor Cyan
-git status
-git branch -vv
+Write-Host "Next:"
+Write-Host "  git status --porcelain"
+Write-Host "  git add -- scripts/jp-post-merge-cleanup.ps1"
+Write-Host "  git commit -m ""Add post-merge cleanup workflow"""
+Write-Host "  git push"
