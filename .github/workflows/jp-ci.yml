@@ -1,4 +1,3 @@
-
 name: JP CI (Verify + Doctor)
 
 on:
@@ -15,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  verify_doctor:
+  verify_doctor_windows:
     name: Verify + Doctor (Windows)
     runs-on: windows-latest
     env:
@@ -37,13 +36,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install JP toolchain (CI)
+      - name: Install JP toolchain (Windows)
         shell: pwsh
         run: |
-          # Ensure Chocolatey is ready (windows-latest includes it)
           choco --version
 
-          # OpenSSL + Gitleaks (jp-verify requires openssl; doctor uses gitleaks if present)
+          # OpenSSL + Gitleaks
           choco install openssl.light -y --no-progress
           choco install gitleaks -y --no-progress
 
@@ -73,30 +71,6 @@ jobs:
           python -m pip install "semgrep==${env:SEMGREP_VERSION}"
           semgrep --version
 
-      - name: Map workspace to expected JP path
-        shell: pwsh
-        run: |
-          # jp-doctor/jp-verify may assume this local dev path exists.
-          # On GitHub runners, the repo lives under $env:GITHUB_WORKSPACE (e.g., D:\a\jp-engine\jp-engine).
-          # Create a junction so scripts that expect C:\Dev\JP_ENGINE\jp-engine can still run in CI.
-          $expected = "C:\Dev\JP_ENGINE\jp-engine"
-          $parent   = Split-Path $expected -Parent
-
-          New-Item -ItemType Directory -Force -Path $parent | Out-Null
-
-          if (Test-Path $expected) {
-            try {
-              Remove-Item -LiteralPath $expected -Force -Recurse
-            } catch {
-              # If removal fails, continue and attempt to overwrite with a new junction
-            }
-          }
-
-          New-Item -ItemType Junction -Path $expected -Target $env:GITHUB_WORKSPACE | Out-Null
-
-          Write-Host "Mapped $expected -> $env:GITHUB_WORKSPACE"
-          Get-Item -LiteralPath $expected | Format-List
-
       - name: Run jp-verify
         shell: pwsh
         run: |
@@ -106,3 +80,72 @@ jobs:
         shell: pwsh
         run: |
           pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-doctor.ps1
+
+  verify_doctor_ubuntu:
+    name: Verify + Doctor (Ubuntu)
+    runs-on: ubuntu-latest
+    env:
+      SEMGREP_VERSION: "1.151.0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install OS deps (Ubuntu)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssl
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.4_linux_x64.tar.gz -o /tmp/gitleaks.tgz
+          sudo tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Install JP toolchain (Ubuntu)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm install -g vercel netlify-cli
+
+          python -m pip install --upgrade pip
+          python -m pip install pipx
+          pipx --version
+          pipx install pre-commit
+          pre-commit --version
+
+          git --version
+          openssl version
+          node --version
+          npm --version
+          vercel --version
+          netlify --version
+
+      - name: Install semgrep (pinned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install "semgrep==${SEMGREP_VERSION}"
+          semgrep --version
+
+      - name: Run jp-verify
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/jp-verify.ps1
+
+      - name: Run jp-doctor
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/jp-doctor.ps1

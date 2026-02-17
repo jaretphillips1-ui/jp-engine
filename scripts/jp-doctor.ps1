@@ -73,21 +73,36 @@ function Get-NormalizedPath([string]$Path) {
 function Assert-InAllowedRepo([string]$RepoRoot) {
   $normRepo = Get-NormalizedPath $RepoRoot
 
-  # Local dev canonical expected root
-  $localExpected = "C:\Dev\JP_ENGINE\jp-engine"
-
-  # Allowed roots = localExpected + (CI workspace if present)
-  $allowed = @()
-  $allowed += (Get-NormalizedPath $localExpected)
-
+  # CI: require repo root to match GitHub workspace (cross-platform, strict).
   if ($env:GITHUB_WORKSPACE) {
-    $allowed += (Get-NormalizedPath $env:GITHUB_WORKSPACE)
+    $ws = Get-NormalizedPath $env:GITHUB_WORKSPACE
+    if ($ws -ne $normRepo) {
+      throw "Safety gate (CI): Repo root is '$normRepo' but expected '$ws'. Refusing to run."
+    }
+    return $normRepo
   }
 
-  $allowed = $allowed | Select-Object -Unique
+  if ($IsWindows) {
+    # Local dev canonical expected root (Windows-only).
+    $localExpected = "C:\Dev\JP_ENGINE\jp-engine"
+    $expected = Get-NormalizedPath $localExpected
 
-  if ($allowed -notcontains $normRepo) {
-    throw "Safety gate: Repo root is '$normRepo' but expected one of: $($allowed -join ', '). Refusing to run."
+    if ($expected -ne $normRepo) {
+      throw "Safety gate (Windows): Repo root is '$normRepo' but expected '$expected'. Refusing to run."
+    }
+
+    return $normRepo
+  }
+
+  # Local non-Windows: allow only if this looks like the repo root.
+  $gitDir = Join-Path $normRepo ".git"
+  $doctor = Join-Path $normRepo "scripts/jp-doctor.ps1"
+
+  if (-not (Test-Path -LiteralPath $gitDir)) {
+    throw "Safety gate (non-Windows): '$normRepo' does not contain a .git directory. Refusing to run."
+  }
+  if (-not (Test-Path -LiteralPath $doctor)) {
+    throw "Safety gate (non-Windows): '$normRepo' does not look like JP Engine repo root (missing scripts/jp-doctor.ps1). Refusing to run."
   }
 
   return $normRepo
