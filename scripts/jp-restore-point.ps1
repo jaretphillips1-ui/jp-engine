@@ -33,7 +33,6 @@ function Assert-NotBadArtifactRoot([string]$p) {
 }
 
 function Get-Git([string[]]$GitArgs) {
-  # PowerShell-native invocation: stable arg passing, reliable capture.
   if (-not $GitArgs -or $GitArgs.Count -lt 1) { throw "Internal error: Get-Git called with no arguments." }
   $out = & git @GitArgs 2>&1
   $code = $LASTEXITCODE
@@ -44,6 +43,16 @@ function Get-Git([string[]]$GitArgs) {
     throw "git $argText failed ($code): $text"
   }
   return $text
+}
+
+function Should-IncludeFile([string]$fullPath, [string]$repoRoot, [hashtable]$excludeDirSet) {
+  # Convert to repo-relative segments and reject if any segment equals an excluded dir name.
+  $rel = $fullPath.Substring($repoRoot.Length).TrimStart('\')
+  $segs = $rel -split '\\'
+  foreach ($s in $segs) {
+    if ($excludeDirSet.ContainsKey($s.ToLowerInvariant())) { return $false }
+  }
+  return $true
 }
 
 # ---- Gates ----
@@ -82,15 +91,13 @@ if (-not $AllowDirty -and $status) {
 $excludeDirs = @(
   '.git','node_modules','.next','dist','build','.turbo','.cache','coverage','out'
 )
-$excludeDirPatterns = $excludeDirs | ForEach-Object { '\'+[regex]::Escape($_)+'\' }
+
+$excludeDirSet = @{}
+foreach ($d in $excludeDirs) { $excludeDirSet[$d.ToLowerInvariant()] = $true }
 
 $files = Get-ChildItem -LiteralPath $repoRoot -File -Recurse -Force |
   Where-Object {
-    $full = $_.FullName
-    foreach ($pat in $excludeDirPatterns) {
-      if ($full -match $pat) { return $false }
-    }
-    return $true
+    Should-IncludeFile -fullPath $_.FullName -repoRoot $repoRoot -excludeDirSet $excludeDirSet
   }
 
 if ($files.Count -lt 1) { throw "No files found to snapshot (unexpected)." }
