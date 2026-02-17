@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [ "master" ]
   schedule:
-    # Weekly scan — Sundays at 03:00 UTC (Sat 11pm Halifax typically; DST may shift)
+    # Weekly scan — Sundays at 03:00 UTC
     - cron: "0 3 * * 0"
   workflow_dispatch: {}
 
@@ -18,39 +18,37 @@ jobs:
     name: Verify + Doctor (Windows)
     runs-on: windows-latest
 
+    env:
+      SEMGREP_VERSION: "1.151.0"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup PowerShell (pwsh)
-        uses: PowerShell/PowerShell@v1
-        with:
-          pwsh-version: "7.5.x"
-
       - name: Setup Node (for future npm checks)
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Install gitleaks
-        shell: pwsh
-        run: |
-          choco install gitleaks -y
-          gitleaks version
 
       - name: Setup Python (for semgrep)
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install semgrep
+      - name: Install semgrep (pinned)
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install semgrep
+          pip install "semgrep==${env:SEMGREP_VERSION}"
           semgrep --version
+
+      - name: Install gitleaks
+        shell: pwsh
+        run: |
+          choco install gitleaks -y --no-progress
+          gitleaks version
 
       - name: Run jp-verify
         shell: pwsh
