@@ -75,10 +75,24 @@ function Run-Step([string]$Name, [scriptblock]$Action, [ref]$Failures) {
   }
 }
 
-function Test-FileContainsLine([string]$Path, [string]$PatternRegex) {
-  if (-not (Test-Path -LiteralPath $Path)) { return $false }
-  $txt = Get-Content -LiteralPath $Path -Raw
-  return ($txt -match $PatternRegex)
+function Get-TextLines([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return @() }
+  # Read as lines, preserve ordering; ignore blank/comment trimming (we want literal content)
+  return Get-Content -LiteralPath $Path -ErrorAction Stop
+}
+
+function Gitignore-HasLineMatch([string]$GitignorePath, [string]$PatternRegex) {
+  # IMPORTANT:
+  # - Match LINE-BY-LINE so ^ and $ mean start/end of line (not whole file).
+  # - Ignore comment-only lines.
+  $lines = Get-TextLines -Path $GitignorePath
+  foreach ($line in $lines) {
+    $l = $line.Trim()
+    if ($l.Length -eq 0) { continue }
+    if ($l.StartsWith("#")) { continue }
+    if ($l -match $PatternRegex) { return $true }
+  }
+  return $false
 }
 
 # --- Start ---
@@ -92,7 +106,6 @@ $failures = 0
 $repoRoot = Get-RepoRoot
 Assert-InRepo -RepoRoot $repoRoot
 
-# Safety: force working directory to repo root for all steps.
 Set-Location -LiteralPath $repoRoot
 
 $branch = (& git rev-parse --abbrev-ref HEAD).Trim()
@@ -118,21 +131,22 @@ Run-Step ".gitignore sanity checks" ([scriptblock]{
   $gi = Join-Path $repoRoot ".gitignore"
   if (-not (Test-Path -LiteralPath $gi)) { throw "Missing .gitignore at repo root." }
 
+  # These are "recommended" patterns; WARN only.
+  # NOTE: These are tested LINE-BY-LINE so anchors behave correctly.
   $mustHave = @(
     '(^|/)\.env(\..*)?$',
-    '\.env\.local',
-    '\.DS_Store',
-    'node_modules',
-    '\.vercel',
-    '\.netlify',
-    'dist',
-    'build',
-    '\.next',
+    '\.env\.local$',
+    'node_modules/?$',
+    '\.vercel/?$',
+    '\.netlify/?$',
+    'dist/?$',
+    'build/?$',
+    '\.next/?$',
     '\.zip$'
   )
 
   foreach ($rx in $mustHave) {
-    if (-not (Test-FileContainsLine -Path $gi -PatternRegex $rx)) {
+    if (-not (Gitignore-HasLineMatch -GitignorePath $gi -PatternRegex $rx)) {
       Write-Warn "Recommended ignore missing (regex): $rx"
     }
   }
@@ -154,9 +168,6 @@ Run-Step "Block obvious dangerous tracked files (keys/certs/env)" ([scriptblock]
 }) ([ref]$failures)
 
 Run-Step "Quick grep for common secret markers (repo-scoped, exclude doctor script)" ([scriptblock]{
-  # IMPORTANT:
-  # - We exclude scripts/jp-doctor.ps1 so the pattern list itself doesn't trigger a false failure.
-  # - This is just a fast “tripwire”. gitleaks is the real leak scanner.
   $exclude = ":(exclude)scripts/jp-doctor.ps1"
 
   $needles = @(
@@ -188,9 +199,6 @@ if (-not $NoGitleaks) {
       return
     }
 
-    # --source . => repo only
-    # --redact => do not print secret values
-    # --exit-code 1 => fail on findings
     & gitleaks detect --source "." --redact --no-banner --exit-code 1
   }) ([ref]$failures)
 }
