@@ -61,6 +61,18 @@ try {
   $osslLine = (& openssl version 2>$null | Select-Object -First 1)
   if ($osslLine) { Say ("openssl: " + $osslLine.Trim()) } else { Say "openssl: (version unknown)" }
 
+  # --- vercel ---
+  $vercelCmd = Get-Command vercel -ErrorAction SilentlyContinue
+  if (-not $vercelCmd) { throw "vercel not found (Vercel CLI). Install or add to PATH." }
+  $vercelLine = (& vercel --version 2>$null | Select-Object -First 1)
+  if ($vercelLine) { Say ("vercel: " + $vercelLine.Trim()) } else { Say "vercel: (version unknown)" }
+
+  # --- netlify ---
+  $netlifyCmd = Get-Command netlify -ErrorAction SilentlyContinue
+  if (-not $netlifyCmd) { throw "netlify not found (Netlify CLI). Install or add to PATH." }
+  $netlifyLine = (& netlify --version 2>$null | Select-Object -First 1)
+  if ($netlifyLine) { Say ("netlify: " + $netlifyLine.Trim()) } else { Say "netlify: (version unknown)" }
+
   BreakLine "VERIFY — LINE ENDINGS" -Thick 4
   $ac  = (git config --get core.autocrlf) 2>$null
   $eol = (git config --get core.eol) 2>$null
