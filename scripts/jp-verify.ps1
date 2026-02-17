@@ -7,13 +7,21 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = Split-Path -Parent $repoRoot
+function Say([string]$msg)  { if (-not $Quiet) { Write-Host $msg } }
+function Emit([string]$msg) { Write-Output $msg }
+
+# Resolve repo root robustly via git (fallback to script-relative path)
+$repoRoot = $null
+try {
+  $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
+} catch { }
+
+if ([string]::IsNullOrWhiteSpace($repoRoot)) {
+  $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+  $repoRoot = Split-Path -Parent $repoRoot
+}
 
 $stopScript = Join-Path $repoRoot "scripts\jp-stop.ps1"
-
-function Say([string]$msg)  { if (-not $Quiet) { Write-Host   $msg } }
-function Emit([string]$msg) { Write-Output $msg }
 
 function BreakLine([string]$label, [switch]$Pass, [switch]$Fail, [int]$Thick = 4) {
   $bp = Join-Path $repoRoot "scripts\jp-break.ps1"
@@ -34,16 +42,20 @@ try {
   Say ("repo: " + $repoRoot)
 
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git not found." }
-  $branch = (git rev-parse --abbrev-ref HEAD) 2>$null
+
+  $branch = $null
+  try { $branch = (git rev-parse --abbrev-ref HEAD) 2>$null } catch { }
   if ($branch) { Say ("git branch: " + $branch.Trim()) }
 
   BreakLine "VERIFY — TOOLS" -Thick 4
 
+  # --- gh ---
   $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
   if (-not $ghCmd) { throw "gh not found (GitHub CLI). Install or add to PATH." }
   $ghLine = (& gh --version 2>$null | Select-Object -First 1)
   if ($ghLine) { Say ("gh: " + $ghLine.Trim()) } else { Say "gh: (version unknown)" }
 
+  # --- openssl ---
   $osslCmd = Get-Command openssl -ErrorAction SilentlyContinue
   if (-not $osslCmd) { throw "openssl not found. Install or add to PATH." }
   $osslLine = (& openssl version 2>$null | Select-Object -First 1)
@@ -64,15 +76,18 @@ try {
     $issues = Invoke-ScriptAnalyzer -Path (Join-Path $repoRoot "scripts") -Recurse -Severity @('Error','Warning') -ErrorAction Stop
     $errors = @($issues | Where-Object Severity -eq 'Error')
     if ($errors.Count -gt 0) {
-      $errors | ForEach-Object { Write-Host ("ERROR: " + $_.RuleName + " — " + $_.Message + " (" + $_.ScriptName + ":" + $_.Line + ")") }
+      $errors | ForEach-Object {
+        Write-Host ("ERROR: " + $_.RuleName + " — " + $_.Message + " (" + $_.ScriptName + ":" + $_.Line + ")")
+      }
       throw "PSScriptAnalyzer errors: $($errors.Count)."
     }
     Say "PSScriptAnalyzer OK."
   }
 
-  try { $top = (git rev-parse --show-toplevel 2>$null) } catch { $top = $null }
-  $ga = if ($top) { Join-Path $top ".gitattributes" } else { ".gitattributes" }
+  # Extra line-ending sanity: local git config + .gitattributes present?
+  $ga = Join-Path $repoRoot ".gitattributes"
   $hasGA = Test-Path -LiteralPath $ga
+
   try { $safecrlf = (git config --local --get core.safecrlf 2>$null) } catch { $safecrlf = $null }
   try { $autocrlf = (git config --local --get core.autocrlf 2>$null) } catch { $autocrlf = $null }
   if ([string]::IsNullOrWhiteSpace($safecrlf)) { $safecrlf = "(unset)" }
@@ -120,5 +135,17 @@ finally {
         Write-Host ""
       }
     }
+  }
+
+  # Print next commands AFTER the STOP banner (so it's always visible)
+  if (-not $NoStop -and -not $didFail) {
+    Write-Host ""
+    Write-Host "Next (resume gate):"
+    Write-Host "  Set-Location `"C:\Dev\JP_ENGINE\jp-engine`""
+    Write-Host "  .\scripts\jp-resume.ps1"
+    Write-Host ""
+    Write-Host "Next (night save):"
+    Write-Host "  .\scripts\jp-save.ps1"
+    Write-Host ""
   }
 }
