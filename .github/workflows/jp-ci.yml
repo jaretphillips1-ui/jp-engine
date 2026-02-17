@@ -16,9 +16,12 @@ permissions:
 
 jobs:
   verify_doctor:
-    name: Verify + Doctor (Windows)
-    runs-on: windows-latest
-
+    name: Verify + Doctor (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     env:
       SEMGREP_VERSION: "1.151.0"
 
