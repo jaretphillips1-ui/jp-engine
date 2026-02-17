@@ -111,8 +111,6 @@ function Ensure-OnMasterAndSynced {
   }
 
   Git @('fetch','--prune')
-
-  # Pull fast-forward only to keep master linear and clean
   Git @('pull','--ff-only')
 }
 
@@ -128,7 +126,6 @@ function Assert-BranchDoesNotExist([string]$Name) {
     Fail "JP guard: Branch already exists locally: '$Name'. Choose a different -BranchName."
   }
 
-  # Check remote (origin/<name>) without failing if remote missing
   $remotes = (Get-GitOutput @('remote')).Split([Environment]::NewLine, [System.StringSplitOptions]::RemoveEmptyEntries)
   if ($remotes -contains 'origin') {
     $remoteMatch = (Get-GitOutput @('ls-remote','--heads','origin',$Name)).Trim()
@@ -147,8 +144,6 @@ function Run-IfExists([string]$PathFromRoot, [string]$Label) {
   }
 
   Write-Host ("Running {0}: {1}" -f $Label, $PathFromRoot)
-
-  # Pass the file path as a normal argument (no embedded quotes)
   Exec -File 'pwsh' -Args @('-NoProfile','-ExecutionPolicy','Bypass','-File', $full)
 }
 
@@ -159,8 +154,9 @@ Set-Location -LiteralPath $repoRoot
 
 Write-Host "JP Start-JPWork — repo root: $repoRoot"
 
-# Tooling sanity: git must exist
-try { Git @('--version') } catch { Fail "JP guard: git is required but was not found or failed to run." }
+# Tooling sanity: git must exist (use direct invocation; don't rely on wrapper here)
+& git --version | Out-Host
+if ($LASTEXITCODE -ne 0) { Fail "JP guard: git is required but failed to run." }
 
 Ensure-CleanOrStash
 Ensure-OnMasterAndSynced
