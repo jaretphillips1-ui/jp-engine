@@ -142,11 +142,14 @@ function Run-IfExists([string]$PathFromRoot, [string]$Label) {
   $root = Find-RepoRootFromScript
   $full = Join-Path $root $PathFromRoot
   if (-not (Test-Path -LiteralPath $full)) {
-    Write-Host "Skipping $Label (missing: $PathFromRoot)"
+    Write-Host ("Skipping {0} (missing: {1})" -f $Label, $PathFromRoot)
     return
   }
-  Write-Host "Running $Label: $PathFromRoot"
-  Exec -File 'pwsh' -Args @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $full + '"'))
+
+  Write-Host ("Running {0}: {1}" -f $Label, $PathFromRoot)
+
+  # Pass the file path as a normal argument (no embedded quotes)
+  Exec -File 'pwsh' -Args @('-NoProfile','-ExecutionPolicy','Bypass','-File', $full)
 }
 
 # ---- main ----
