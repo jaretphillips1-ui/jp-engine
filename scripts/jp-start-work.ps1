@@ -37,18 +37,18 @@ function Assert-JPRepoRoot([string]$Root) {
   if (-not (Test-Path -LiteralPath (Join-Path $Root 'docs\00_JP_INDEX.md'))) { Fail "JP guard: Not jp-engine: missing docs\00_JP_INDEX.md at '$Root'." }
 }
 
-function Git-Run([string[]]$Args) {
-  & git @Args | Out-Host
+function Git-Run([string[]]$GitArgs) {
+  & git @GitArgs | Out-Host
   if ($LASTEXITCODE -ne 0) {
-    Fail ("Command failed: git " + ($Args -join ' '))
+    Fail ("Command failed: git " + ($GitArgs -join ' '))
   }
 }
 
-function Git-Out([string[]]$Args) {
-  $out = & git @Args 2>&1
+function Git-Out([string[]]$GitArgs) {
+  $out = & git @GitArgs 2>&1
   if ($LASTEXITCODE -ne 0) {
     if ($out) { Write-Host ($out | Out-String).TrimEnd() }
-    Fail ("Command failed: git " + ($Args -join ' '))
+    Fail ("Command failed: git " + ($GitArgs -join ' '))
   }
   return ($out | Out-String)
 }
