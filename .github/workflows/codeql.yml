@@ -32,11 +32,7 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          # JP Engine repo may not have a build step (no package.json at repo root).
-          # Avoid "Autobuild" failures by explicitly disabling build.
           build-mode: none
-
-      # No Autobuild step on purpose (build-mode: none)
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
