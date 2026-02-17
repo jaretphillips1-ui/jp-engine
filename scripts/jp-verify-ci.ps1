@@ -12,11 +12,8 @@ This script:
 - Prints versions (pwsh, git)
 - Ensures PSScriptAnalyzer is available (installed by workflow)
 - Runs PSScriptAnalyzer over scripts/ and root *.ps1 (if any)
+- Prints analyzer warnings, but FAILS CI only on analyzer errors
 - Ensures working tree is clean (CI expectation)
-
-Policy:
-- Analyzer WARNINGS are printed but do NOT fail CI
-- Analyzer ERRORS fail CI
 #>
 
 [CmdletBinding()]
@@ -65,9 +62,19 @@ function Get-AnalyzerTargets([string]$RepoRoot) {
     foreach ($f in $rootPs) { $targets += $f.FullName }
   }
 
-  # Normalize to strings (avoid System.Object[] binding weirdness across hosts)
+  # Normalize to strings
   $targets = @($targets | Where-Object { $_ } | ForEach-Object { [string]$_ })
   return $targets
+}
+
+function Invoke-AnalyzerOnTarget([string]$Target) {
+  if (Test-Path -LiteralPath $Target -PathType Container) {
+    return Invoke-ScriptAnalyzer -Path $Target -Recurse -Severity @('Error','Warning') -ErrorAction Stop
+  }
+  if (Test-Path -LiteralPath $Target -PathType Leaf) {
+    return Invoke-ScriptAnalyzer -Path $Target -Severity @('Error','Warning') -ErrorAction Stop
+  }
+  return @()
 }
 
 # ---- main ----
@@ -85,11 +92,12 @@ Assert-CleanTree
 if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
   Fail "PSScriptAnalyzer not found. CI must install it before running jp-verify-ci.ps1."
 }
-
 Import-Module PSScriptAnalyzer -ErrorAction Stop
 
-$targets = Get-AnalyzerTargets -RepoRoot $repoRoot
-if (-not $targets -or $targets.Count -eq 0) {
+# IMPORTANT: wrap in @() so Count is always safe even if one target
+$targets = @(Get-AnalyzerTargets -RepoRoot $repoRoot)
+
+if ($targets.Count -eq 0) {
   Write-Host "No PowerShell targets found to analyze. (scripts/ missing?)"
   Write-Host ""
   Write-Host "VERIFY (CI) — PASS ✅"
@@ -100,39 +108,29 @@ Write-Host ""
 Write-Host "Running PSScriptAnalyzer…"
 
 $all = @()
-
 foreach ($t in $targets) {
-  if (Test-Path -LiteralPath $t -PathType Container) {
-    $r = Invoke-ScriptAnalyzer -Path $t -Recurse -Severity @('Error','Warning') -ErrorAction Stop
-    if ($r) { $all += $r }
-  }
-  elseif (Test-Path -LiteralPath $t -PathType Leaf) {
-    $r = Invoke-ScriptAnalyzer -Path $t -Severity @('Error','Warning') -ErrorAction Stop
-    if ($r) { $all += $r }
-  }
+  $r = Invoke-AnalyzerOnTarget -Target $t
+  if ($r) { $all += $r }
 }
-
-$errs  = @()
-$warns = @()
 
 if ($all -and $all.Count -gt 0) {
-  $errs  = @($all | Where-Object { $_.Severity -eq 'Error' })
-  $warns = @($all | Where-Object { $_.Severity -eq 'Warning' })
+  $errors   = @($all | Where-Object { $_.Severity -eq 'Error' })
+  $warnings = @($all | Where-Object { $_.Severity -eq 'Warning' })
+
+  if ($warnings.Count -gt 0) {
+    Write-Host ""
+    Write-Host "PSScriptAnalyzer warnings (do not fail CI):"
+    $warnings | Sort-Object RuleName, ScriptName, Line | Format-Table -AutoSize | Out-Host
+  }
+
+  if ($errors.Count -gt 0) {
+    Write-Host ""
+    Write-Host "PSScriptAnalyzer errors (FAIL CI):"
+    $errors | Sort-Object RuleName, ScriptName, Line | Format-Table -AutoSize | Out-Host
+    Fail ("PSScriptAnalyzer found " + $errors.Count + " error(s).")
+  }
 }
 
-if ($warns -and $warns.Count -gt 0) {
-  Write-Host ""
-  Write-Host ("PSScriptAnalyzer WARNINGS: " + $warns.Count)
-  $warns | Sort-Object RuleName, ScriptName, Line | Format-Table -AutoSize | Out-Host
-}
-
-if ($errs -and $errs.Count -gt 0) {
-  Write-Host ""
-  Write-Host ("PSScriptAnalyzer ERRORS: " + $errs.Count)
-  $errs | Sort-Object RuleName, ScriptName, Line | Format-Table -AutoSize | Out-Host
-  Fail ("PSScriptAnalyzer found " + $errs.Count + " error(s).")
-}
-
-Write-Host "PSScriptAnalyzer OK (no errors)."
+Write-Host "PSScriptAnalyzer OK."
 Write-Host ""
 Write-Host "VERIFY (CI) — PASS ✅"
