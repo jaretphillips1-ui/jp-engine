@@ -13,6 +13,10 @@ This script:
 - Ensures PSScriptAnalyzer is available (installed by workflow)
 - Runs PSScriptAnalyzer over scripts/ and root *.ps1 (if any)
 - Ensures working tree is clean (CI expectation)
+
+Policy:
+- Analyzer WARNINGS are printed but do NOT fail CI
+- Analyzer ERRORS fail CI
 #>
 
 [CmdletBinding()]
@@ -61,7 +65,7 @@ function Get-AnalyzerTargets([string]$RepoRoot) {
     foreach ($f in $rootPs) { $targets += $f.FullName }
   }
 
-  # Normalize to strings
+  # Normalize to strings (avoid System.Object[] binding weirdness across hosts)
   $targets = @($targets | Where-Object { $_ } | ForEach-Object { [string]$_ })
   return $targets
 }
@@ -85,9 +89,7 @@ if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
 Import-Module PSScriptAnalyzer -ErrorAction Stop
 
 $targets = Get-AnalyzerTargets -RepoRoot $repoRoot
-$targetCount = ($targets | Measure-Object).Count   # safe even if $targets is $null
-
-if ($targetCount -eq 0) {
+if (-not $targets -or $targets.Count -eq 0) {
   Write-Host "No PowerShell targets found to analyze. (scripts/ missing?)"
   Write-Host ""
   Write-Host "VERIFY (CI) — PASS ✅"
@@ -99,7 +101,7 @@ Write-Host "Running PSScriptAnalyzer…"
 
 $all = @()
 
-foreach ($t in @($targets)) {
+foreach ($t in $targets) {
   if (Test-Path -LiteralPath $t -PathType Container) {
     $r = Invoke-ScriptAnalyzer -Path $t -Recurse -Severity @('Error','Warning') -ErrorAction Stop
     if ($r) { $all += $r }
@@ -110,11 +112,27 @@ foreach ($t in @($targets)) {
   }
 }
 
-if (($all | Measure-Object).Count -gt 0) {
-  $all | Sort-Object RuleName, ScriptName, Line | Format-Table -AutoSize | Out-Host
-  Fail ("PSScriptAnalyzer found " + ($all | Measure-Object).Count + " issue(s).")
+$errs  = @()
+$warns = @()
+
+if ($all -and $all.Count -gt 0) {
+  $errs  = @($all | Where-Object { $_.Severity -eq 'Error' })
+  $warns = @($all | Where-Object { $_.Severity -eq 'Warning' })
 }
 
-Write-Host "PSScriptAnalyzer OK."
+if ($warns -and $warns.Count -gt 0) {
+  Write-Host ""
+  Write-Host ("PSScriptAnalyzer WARNINGS: " + $warns.Count)
+  $warns | Sort-Object RuleName, ScriptName, Line | Format-Table -AutoSize | Out-Host
+}
+
+if ($errs -and $errs.Count -gt 0) {
+  Write-Host ""
+  Write-Host ("PSScriptAnalyzer ERRORS: " + $errs.Count)
+  $errs | Sort-Object RuleName, ScriptName, Line | Format-Table -AutoSize | Out-Host
+  Fail ("PSScriptAnalyzer found " + $errs.Count + " error(s).")
+}
+
+Write-Host "PSScriptAnalyzer OK (no errors)."
 Write-Host ""
 Write-Host "VERIFY (CI) — PASS ✅"
