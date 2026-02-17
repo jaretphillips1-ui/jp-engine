@@ -71,10 +71,8 @@ function Assert-CleanTree {
 }
 
 function Get-LocalMergedBranches {
-  # Includes branches merged into current HEAD (master)
   $raw = Git-Out @('branch','--merged')
   $lines = $raw -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-  # Lines may start with '* ' for current branch
   $branches = foreach ($l in $lines) {
     $name = $l -replace '^\*\s+', ''
     $name = $name.Trim()
@@ -84,14 +82,11 @@ function Get-LocalMergedBranches {
 }
 
 function Get-LocalGoneBranches {
-  # Looks for: "branchName  abc123 [origin/branchName: gone] message"
   $raw = Git-Out @('branch','-vv')
   $lines = $raw -split "`r?`n" | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ }
   $gone = foreach ($l in $lines) {
-    # Strip leading "* " or "  "
     $t = $l.TrimStart()
     if ($t.StartsWith('* ')) { $t = $t.Substring(2) }
-    # branch name is first token
     $parts = $t -split '\s+'
     if ($parts.Count -ge 1) {
       $branch = $parts[0]
@@ -104,7 +99,6 @@ function Get-LocalGoneBranches {
 function Delete-LocalBranchSafe([string]$Branch) {
   if ([string]::IsNullOrWhiteSpace($Branch)) { return }
   if ($Branch -eq 'master') { return }
-  # Only delete if it actually exists locally
   $exists = (Git-Out @('branch','--list',$Branch)).Trim()
   if ([string]::IsNullOrWhiteSpace($exists)) { return }
 
@@ -151,7 +145,6 @@ if (-not $NoDeleteMerged) {
   Write-Host "Skipping delete of merged branches (-NoDeleteMerged)."
 }
 
-# Final sanity
 Assert-OnMaster
 Assert-CleanTree
 
@@ -163,10 +156,10 @@ if ($deleted.Count -gt 0) {
 } else {
   Write-Host "Deleted local branches: (none)"
 }
-Write-Host "Master is synced and clean."
+Write-Host "Master is clean."
+
 Write-Host ""
 Write-Host "Next:"
 Write-Host "  git status --porcelain"
-Write-Host "  git add -- scripts/jp-post-merge-cleanup.ps1"
-Write-Host "  git commit -m ""Add post-merge cleanup workflow"""
-Write-Host "  git push"
+Write-Host "  # If this script was just added/changed, commit it once. Otherwise you're done."
+Write-Host "  # When ready: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/jp-start-work.ps1"
