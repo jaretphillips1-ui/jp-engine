@@ -2,9 +2,9 @@ name: JP CI (Verify + Doctor)
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
   schedule:
     # Weekly scan — Sundays at 03:00 UTC
     - cron: "0 3 * * 0"
@@ -58,4 +58,4 @@ jobs:
       - name: Run jp-doctor
         shell: pwsh
         run: |
-          pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-doctor.ps1
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-doctor.ps1 -VerboseOutput
