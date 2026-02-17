@@ -1,39 +1,48 @@
-# JP Engine Recovery (Restore Points + Handoff)
+# JP Engine Recovery System (Canonical)
 
-This document describes how we recover quickly and safely from mistakes, bad merges, or broken CI.
+JP Engine recovery is designed to survive:
+- chat resets
+- machine loss
+- repo corruption
+- accidental deletions
+- dependency/toolchain drift
 
-## Baselines
-- When CI is green and local verify/doctor passes:
-  - create a tag and push it (example: `baseline-ci-green-YYYY-MM-DD`)
-- Keep at least one recent green baseline (24h+ retention) before risky expansions.
+## Canonical roots
+### Repo root (source of truth)
+This git repo is the permanent truth for:
+- docs (context, SOPs, blueprint)
+- scripts (repeatable workflows)
 
-## Fast recovery moves
-- If you need to return to a known-good baseline:
-  1) `git fetch --tags`
-  2) `git checkout <baseline-tag>`
-  3) verify locally
-  4) decide whether to branch or reset the mainline (policy depends on collaboration)
+### External artifact root (restore points, exports)
+Default canonical artifact root (do not use Desktop):
+- C:\Dev\_JP_ENGINE\RECOVERY\
 
-## Working directory safety
-- Always confirm repo root before running scripts:
-  - `Set-Location -LiteralPath C:\Dev\JP_ENGINE\jp-engine`
-  - `git status`
-- Avoid running scripts from the wrong directory.
+(We enforce this in scripts via guardrails.)
 
-## Profile/Work context (Active Project)
-- `Start-WorkJP` sets the active project and jumps to the JP repo
-- new PowerShell windows auto-start in the active repo
-- `Stop-Work` clears the active project (full shutdown)
+## Restore points
+A restore point is a dated, self-contained snapshot that lets you get back to a known-good state.
 
-## If CI goes red
-- Inspect only the first failing step.
-- Apply the smallest possible change.
-- Commit/push.
-- Rerun.
+### What a restore point contains
+- zip of repo working tree (clean, no node_modules, no artifacts)
+- a manifest (timestamp, git commit, branch, machine, notes)
+- optionally: toolchain snapshot output
 
-## Handoff template
-- Current branch + head commit
-- Tag(s) and state (green/red)
-- Working tree clean/dirty
-- Next 1–3 tasks
-- Any gotchas discovered during last run
+### Restore point retention
+- Keep dated restore points
+- Maintain a moving pointer: LATEST_GREEN
+- Never overwrite dated points
+
+## Rebuild-from-zero (fresh machine)
+Goal: a brand-new Windows machine can be productive quickly.
+
+### Steps (high level)
+1) Install toolchain (per JP_TOOLCHAIN.md)
+2) Clone repo
+3) Run scripts/jp-verify.ps1
+4) Run scripts/jp-rebuild-from-zero.ps1 (guided bootstrap)
+5) Create first restore point
+
+## SOP alignment
+- One-track CI loop: run -> fix first red step only -> commit -> rerun
+- Script changes are full-file rewrites (paste discipline)
+- Artifacts must never drift outside the canonical artifact root
