@@ -46,7 +46,6 @@ function Get-Git([string[]]$GitArgs) {
 }
 
 function Should-IncludeFile([string]$fullPath, [string]$repoRoot, [hashtable]$excludeDirSet) {
-  # Convert to repo-relative segments and reject if any segment equals an excluded dir name.
   $rel = $fullPath.Substring($repoRoot.Length).TrimStart('\')
   $segs = $rel -split '\\'
   foreach ($s in $segs) {
@@ -67,11 +66,11 @@ if (-not (Test-Path -LiteralPath $artifactRootN)) {
   if ($WhatIf) {
     Write-Host "[WhatIf] Would create ArtifactRoot: $artifactRootN"
   } else {
-    New-Item -ItemType Directory -Path $artifactRootN | Out-Null
+    New-Item -ItemType Directory -Path $artifactRootN -Force | Out-Null
   }
 }
 
-$repoRoot = (Get-Location).Path
+$repoRoot = (Normalize-Path (Get-Location).Path)
 $repoName = Split-Path -Leaf $repoRoot
 $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
 $rpRoot = Join-Path $artifactRootN 'RESTORE_POINTS'
@@ -91,14 +90,11 @@ if (-not $AllowDirty -and $status) {
 $excludeDirs = @(
   '.git','node_modules','.next','dist','build','.turbo','.cache','coverage','out'
 )
-
 $excludeDirSet = @{}
 foreach ($d in $excludeDirs) { $excludeDirSet[$d.ToLowerInvariant()] = $true }
 
 $files = Get-ChildItem -LiteralPath $repoRoot -File -Recurse -Force |
-  Where-Object {
-    Should-IncludeFile -fullPath $_.FullName -repoRoot $repoRoot -excludeDirSet $excludeDirSet
-  }
+  Where-Object { Should-IncludeFile -fullPath $_.FullName -repoRoot $repoRoot -excludeDirSet $excludeDirSet }
 
 if ($files.Count -lt 1) { throw "No files found to snapshot (unexpected)." }
 
@@ -120,38 +116,50 @@ $manifest = [ordered]@{
 
 # ---- Write restore point ----
 if ($WhatIf) {
+  if (-not (Test-Path -LiteralPath $artifactRootN)) {
+    Write-Host "[WhatIf] Would create ArtifactRoot: $artifactRootN"
+  }
   Write-Host "[WhatIf] Would create: $rpDir"
   Write-Host "[WhatIf] Would write:  $manifestPath"
   Write-Host "[WhatIf] Would create: $zipPath (files: $($files.Count))"
-} else {
-  New-Item -ItemType Directory -Path $rpDir -Force | Out-Null
-  ($manifest | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $manifestPath -Encoding utf8
-
-  Push-Location $repoRoot
-  try {
-    $relPaths = $files | ForEach-Object {
-      $_.FullName.Substring($repoRoot.Length).TrimStart('\')
-    }
-    Compress-Archive -Path $relPaths -DestinationPath $zipPath -CompressionLevel Optimal -Force
-  }
-  finally {
-    Pop-Location
-  }
-
-  if (Test-Path -LiteralPath $latestDir) {
-    Remove-Item -LiteralPath $latestDir -Recurse -Force
-  }
-  New-Item -ItemType Directory -Path $latestDir -Force | Out-Null
-  Copy-Item -LiteralPath (Join-Path $rpDir '*') -Destination $latestDir -Recurse -Force
-
-  Write-Host ""
-  Write-Host "Restore point created:" -ForegroundColor Cyan
-  Write-Host " - $rpDir"
-  Write-Host "LATEST_GREEN updated:" -ForegroundColor Cyan
-  Write-Host " - $latestDir"
-  Write-Host ""
-  Write-Host "Zip:" -ForegroundColor Cyan
-  Write-Host " - $zipPath"
-  Write-Host "Manifest:" -ForegroundColor Cyan
-  Write-Host " - $manifestPath"
+  return
 }
+
+# Create directory and assert
+New-Item -ItemType Directory -Path $rpDir -Force | Out-Null
+if (-not (Test-Path -LiteralPath $rpDir)) { throw "Failed to create restore point directory: $rpDir" }
+
+($manifest | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $manifestPath -Encoding utf8
+if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Failed to write manifest: $manifestPath" }
+
+Push-Location $repoRoot
+try {
+  $relPaths = $files | ForEach-Object { $_.FullName.Substring($repoRoot.Length).TrimStart('\') }
+  Compress-Archive -Path $relPaths -DestinationPath $zipPath -CompressionLevel Optimal -Force
+}
+finally {
+  Pop-Location
+}
+if (-not (Test-Path -LiteralPath $zipPath)) { throw "Failed to create zip: $zipPath" }
+
+# Update LATEST_GREEN pointer (copy rpDir contents) - safe copy
+if (Test-Path -LiteralPath $latestDir) {
+  Remove-Item -LiteralPath $latestDir -Recurse -Force
+}
+New-Item -ItemType Directory -Path $latestDir -Force | Out-Null
+
+# Ensure rpDir exists before copy (belt + suspenders)
+if (-not (Test-Path -LiteralPath $rpDir)) { throw "Restore point directory vanished unexpectedly: $rpDir" }
+
+Copy-Item -Path (Join-Path $rpDir '*') -Destination $latestDir -Recurse -Force
+
+Write-Host ""
+Write-Host "Restore point created:" -ForegroundColor Cyan
+Write-Host " - $rpDir"
+Write-Host "LATEST_GREEN updated:" -ForegroundColor Cyan
+Write-Host " - $latestDir"
+Write-Host ""
+Write-Host "Zip:" -ForegroundColor Cyan
+Write-Host " - $zipPath"
+Write-Host "Manifest:" -ForegroundColor Cyan
+Write-Host " - $manifestPath"
