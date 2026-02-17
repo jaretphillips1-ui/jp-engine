@@ -1,0 +1,60 @@
+name: JP CI (Verify + Doctor)
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify_doctor:
+    name: Verify + Doctor (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PowerShell (pwsh)
+        uses: PowerShell/PowerShell@v1
+        with:
+          pwsh-version: "7.5.x"
+
+      - name: Setup Node (for future npm checks)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install gitleaks
+        shell: pwsh
+        run: |
+          choco install gitleaks -y
+          gitleaks version
+
+      - name: Setup Python (for semgrep)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install semgrep
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install semgrep
+          semgrep --version
+
+      - name: Run jp-verify
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-verify.ps1
+
+      - name: Run jp-doctor
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-doctor.ps1
