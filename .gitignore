@@ -50,3 +50,6 @@ build/
 Modules/
 .patch_backups/
 logs/
+
+# Local-only CI notes (do not commit)
+docs/CI_SOP.md
