@@ -1,21 +1,44 @@
-# OS / editor
+# ==============================
+# JP Engine — .gitignore
+# ==============================
+
+# --- OS / editor noise ---
 .DS_Store
 Thumbs.db
 
-# Logs / temp
+# --- Logs / temp ---
 *.log
 *.tmp
 *.bak
+
+# --- Archives / backups ---
 *.zip
+
+# --- Local outputs / drops ---
 _OUT/
 _DROP/
 
-# Local engine scratch
+# --- Local engine scratch ---
 .jp_temp/
 .jp_runs/
 
-# PowerShell module cache (if ever used locally)
+# --- Node / web build artifacts ---
+node_modules/
+.next/
+dist/
+build/
+
+# --- Platform deploy tooling ---
+.vercel/
+.netlify/
+
+# --- Local secrets / env ---
+.env
+.env.*
+!.env.example
+!.env.template
+
+# --- PowerShell / tooling scratch (if used locally) ---
 Modules/
 .patch_backups/
 logs/
-scripts/jp-validate.ps1
