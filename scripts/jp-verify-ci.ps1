@@ -61,7 +61,7 @@ function Get-AnalyzerTargets([string]$RepoRoot) {
     foreach ($f in $rootPs) { $targets += $f.FullName }
   }
 
-  # Normalize to strings (avoid System.Object[] binding weirdness across hosts)
+  # Normalize to strings
   $targets = @($targets | Where-Object { $_ } | ForEach-Object { [string]$_ })
   return $targets
 }
@@ -85,7 +85,9 @@ if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
 Import-Module PSScriptAnalyzer -ErrorAction Stop
 
 $targets = Get-AnalyzerTargets -RepoRoot $repoRoot
-if ($targets.Count -eq 0) {
+$targetCount = ($targets | Measure-Object).Count   # safe even if $targets is $null
+
+if ($targetCount -eq 0) {
   Write-Host "No PowerShell targets found to analyze. (scripts/ missing?)"
   Write-Host ""
   Write-Host "VERIFY (CI) — PASS ✅"
@@ -97,7 +99,7 @@ Write-Host "Running PSScriptAnalyzer…"
 
 $all = @()
 
-foreach ($t in $targets) {
+foreach ($t in @($targets)) {
   if (Test-Path -LiteralPath $t -PathType Container) {
     $r = Invoke-ScriptAnalyzer -Path $t -Recurse -Severity @('Error','Warning') -ErrorAction Stop
     if ($r) { $all += $r }
@@ -108,9 +110,9 @@ foreach ($t in $targets) {
   }
 }
 
-if ($all -and $all.Count -gt 0) {
+if (($all | Measure-Object).Count -gt 0) {
   $all | Sort-Object RuleName, ScriptName, Line | Format-Table -AutoSize | Out-Host
-  Fail ("PSScriptAnalyzer found " + $all.Count + " issue(s).")
+  Fail ("PSScriptAnalyzer found " + ($all | Measure-Object).Count + " issue(s).")
 }
 
 Write-Host "PSScriptAnalyzer OK."
