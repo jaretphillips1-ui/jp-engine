@@ -1,4 +1,9 @@
-# JP Engine — enforce CRLF for PowerShell scripts (prevent LF/CRLF drift + safecrlf blocks)
-*.ps1  text eol=crlf
-*.psm1 text eol=crlf
-*.psd1 text eol=crlf
+# JP Engine — stable line endings across OS (avoid CRLF/LF churn in CI)
+# Keep scripts and workflows in LF in the repo; PowerShell on Windows is fine with LF.
+
+*.ps1  text eol=lf
+*.psm1 text eol=lf
+*.psd1 text eol=lf
+
+*.yml  text eol=lf
+*.yaml text eol=lf
