@@ -7,14 +7,20 @@ Default behavior (safe, PR-only):
 - Pushes current branch to origin (sets upstream if needed)
 - Creates PR if missing (or reuses existing)
 - Waits for checks (unless -SkipWaitChecks)
-- Squash-merges PR and deletes remote branch (unless -NoDeleteRemoteBranch)
+- Squash-merges PR (NO --auto by default)
+- Optionally deletes remote branch (default: delete; use -NoDeleteRemoteBranch to keep)
 - Syncs local master (fetch/prune + pull --ff-only)
 - Runs scripts\jp-post-merge-cleanup.ps1 if present (unless -NoCleanup)
 - Optionally deletes local feature branch (default: delete; use -NoDeleteLocalBranch to keep)
 
+Safety switches:
+- -NoMerge : never merges (best for smoke tests)
+- -SkipWaitChecks : skips gh checks watch; merge is blocked unless -ForceMerge is also provided
+- -ForceMerge : allows merge even when -SkipWaitChecks is set (last-resort)
+
 Notes:
-- This script is designed to be safe to re-run.
-- It never pushes directly to master.
+- Never pushes directly to master.
+- Designed to be safe to re-run.
 #>
 
 [CmdletBinding()]
@@ -36,6 +42,12 @@ param(
 
   [Parameter(Mandatory = $false)]
   [switch]$SkipWaitChecks,
+
+  [Parameter(Mandatory = $false)]
+  [switch]$ForceMerge,
+
+  [Parameter(Mandatory = $false)]
+  [switch]$NoMerge,
 
   [Parameter(Mandatory = $false)]
   [switch]$NoDeleteRemoteBranch,
@@ -89,9 +101,7 @@ function Assert-OriginRemote {
   if (-not ($remotes -contains 'origin')) { Fail "JP guard: Missing remote 'origin'. Configure origin before publish." }
 }
 
-function Get-Branch {
-  return (Git-Out @('branch','--show-current')).Trim()
-}
+function Get-Branch { (Git-Out @('branch','--show-current')).Trim() }
 
 function Assert-FeatureBranch([string]$Branch) {
   if ([string]::IsNullOrWhiteSpace($Branch)) { Fail "JP guard: Could not determine current branch." }
@@ -102,7 +112,6 @@ function Assert-GhReady {
   & gh --version | Out-Host
   if ($LASTEXITCODE -ne 0) { Fail "JP guard: gh CLI is required but failed to run." }
 
-  # Auth check (does not print secrets; will fail if not logged in)
   & gh auth status 2>&1 | Out-Host
   if ($LASTEXITCODE -ne 0) { Fail "JP guard: gh is not authenticated. Run: gh auth login" }
 }
@@ -119,8 +128,7 @@ function Run-IfExists([string]$PathFromRoot, [string]$Label) {
   if ($LASTEXITCODE -ne 0) { Fail ("Command failed: pwsh -File " + $full) }
 }
 
-function Ensure-BranchPushed([string]$Branch) {
-  # If upstream exists, normal push. If not, set upstream.
+function Ensure-BranchPushed {
   $up = (Git-Out @('rev-parse','--abbrev-ref','--symbolic-full-name','@{u}')).Trim()
   if ([string]::IsNullOrWhiteSpace($up)) {
     Git-Run @('push','-u','origin','HEAD')
@@ -130,7 +138,6 @@ function Ensure-BranchPushed([string]$Branch) {
 }
 
 function Get-OrCreatePrUrl([string]$Branch) {
-  # If PR exists, return URL. Otherwise create and return URL.
   $existingUrl = $null
 
   $json = & gh pr view $Branch --json url,state 2>$null
@@ -152,7 +159,6 @@ function Get-OrCreatePrUrl([string]$Branch) {
   if (-not [string]::IsNullOrWhiteSpace($Title)) { $args += @('--title', $Title) }
   if (-not [string]::IsNullOrWhiteSpace($Body))  { $args += @('--body',  $Body)  }
 
-  # If user didn't provide title/body, gh will open an editor unless we use --fill.
   if ([string]::IsNullOrWhiteSpace($Title) -and [string]::IsNullOrWhiteSpace($Body)) {
     $args += '--fill'
   }
@@ -163,7 +169,6 @@ function Get-OrCreatePrUrl([string]$Branch) {
     Fail "Publish-JPWork: Failed to create PR."
   }
 
-  # gh pr create prints the URL; capture it safely
   $text = ($out | Out-String)
   $m = [regex]::Match($text, 'https?://\S+')
   if ($m.Success) {
@@ -172,7 +177,6 @@ function Get-OrCreatePrUrl([string]$Branch) {
     return $url
   }
 
-  # fallback: ask gh for URL now
   $json2 = & gh pr view $Branch --json url 2>$null
   if ($LASTEXITCODE -eq 0 -and $json2) {
     try {
@@ -196,21 +200,24 @@ function Wait-Checks([string]$Branch) {
 }
 
 function Merge-Pr([string]$Branch) {
-  $args = @('pr','merge',$Branch,'--squash')
-
-  if (-not $NoDeleteRemoteBranch) {
-    $args += '--delete-branch'
+  # Safety: If user skipped checks, require explicit ForceMerge
+  if ($SkipWaitChecks -and (-not $ForceMerge)) {
+    Write-Host "Merge blocked: -SkipWaitChecks was used. Re-run with -ForceMerge to merge anyway."
+    return $false
   }
 
-  # Avoid interactive prompts where possible:
-  $args += '--auto'  # if allowed, will merge when checks pass; safe with Wait-Checks already, but keeps it non-interactive
+  $args = @('pr','merge',$Branch,'--squash','--yes')
+  if (-not $NoDeleteRemoteBranch) { $args += '--delete-branch' }
 
+  # IMPORTANT: do NOT use --auto by default (avoids enablePullRequestAutoMerge requirement)
   $out = & gh @args 2>&1
   if ($LASTEXITCODE -ne 0) {
     if ($out) { Write-Host ($out | Out-String).TrimEnd() }
     Fail "Publish-JPWork: Merge failed."
   }
+
   Write-Host ($out | Out-String).TrimEnd()
+  return $true
 }
 
 function Sync-Master {
@@ -224,9 +231,7 @@ function Delete-LocalBranch([string]$Branch) {
     Write-Host "Keeping local branch (-NoDeleteLocalBranch)."
     return
   }
-
   if ($Branch -eq 'master') { return }
-  # After syncing master, it's safe to delete the feature branch.
   Git-Run @('branch','-D',$Branch)
 }
 
@@ -247,21 +252,29 @@ Assert-FeatureBranch -Branch $branch
 
 Assert-GhReady
 
-# Optional preflight checks (recommended)
 if (-not $SkipVerify) { Run-IfExists -PathFromRoot 'scripts\jp-verify.ps1' -Label 'verify' }
 if (-not $SkipDoctor) { Run-IfExists -PathFromRoot 'scripts\jp-doctor.ps1' -Label 'doctor' }
 
-# Ensure feature branch is pushed and tracking
-Ensure-BranchPushed -Branch $branch
+Ensure-BranchPushed
 
-# PR create/reuse
 $prUrl = Get-OrCreatePrUrl -Branch $branch
 
-# Checks then merge
 Wait-Checks -Branch $branch
-Merge-Pr -Branch $branch
 
-# Sync master + optional cleanup
+if ($NoMerge) {
+  Write-Host "No-merge mode (-NoMerge): stopping before merge."
+  Write-Host ("PR: " + $prUrl)
+  Write-Host "Next: remove -NoMerge when you're ready to merge."
+  return
+}
+
+$merged = Merge-Pr -Branch $branch
+if (-not $merged) {
+  Write-Host ("PR: " + $prUrl)
+  Write-Host "Next: run again without -SkipWaitChecks, or add -ForceMerge (last resort)."
+  return
+}
+
 Sync-Master
 if (-not $NoCleanup) { Run-IfExists -PathFromRoot 'scripts\jp-post-merge-cleanup.ps1' -Label 'post-merge cleanup' }
 Delete-LocalBranch -Branch $branch
