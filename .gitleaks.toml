@@ -1,0 +1,7 @@
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(api|auth|token|key)=\w+'''
+scope = "global"
+tags = ["apikey"]
+level = "warn"
