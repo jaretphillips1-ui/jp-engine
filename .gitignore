@@ -35,6 +35,8 @@ build/
 # --- Local secrets / env ---
 .env
 .env.*
+.env.local
+**/.env
 !.env.example
 !.env.template
 
