@@ -84,7 +84,6 @@ function Assert-InAllowedRepo([string]$RepoRoot) {
     $allowed += (Get-NormalizedPath $env:GITHUB_WORKSPACE)
   }
 
-  # De-dupe
   $allowed = $allowed | Select-Object -Unique
 
   if ($allowed -notcontains $normRepo) {
@@ -221,7 +220,9 @@ Run-Step "Quick grep for common secret markers (repo-scoped)" ([scriptblock]{
   )
 
   foreach ($n in $needles) {
-    $out = (& git grep -n --ignore-case -E $n -- . 2>$null)
+    # IMPORTANT:
+    # Exclude this doctor script itself, otherwise the needle list causes a self-hit.
+    $out = (& git grep -n --ignore-case -E $n -- . ":(exclude)scripts/jp-doctor.ps1" 2>$null)
     if ($out) {
       throw "Possible secret pattern match for '$n':`n$($out -join "`n")"
     }
