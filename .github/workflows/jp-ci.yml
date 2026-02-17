@@ -1,3 +1,4 @@
+
 name: JP CI (Verify + Doctor)
 
 on:
@@ -57,9 +58,9 @@ jobs:
           pipx install pre-commit
           pre-commit --version
 
-          # Print versions for logs
+          # Print versions for logs (best-effort; don't fail CI if gh is missing)
           git --version
-          gh --version
+          if (Get-Command gh -ErrorAction SilentlyContinue) { gh --version } else { Write-Host "gh not found (ok)" }
           openssl version
           node --version
           npm --version
@@ -72,6 +73,30 @@ jobs:
         run: |
           python -m pip install "semgrep==${env:SEMGREP_VERSION}"
           semgrep --version
+
+      - name: Map workspace to expected JP path
+        shell: pwsh
+        run: |
+          # jp-doctor/jp-verify may assume this local dev path exists.
+          # On GitHub runners, the repo lives under $env:GITHUB_WORKSPACE (e.g., D:\a\jp-engine\jp-engine).
+          # Create a junction so scripts that expect C:\Dev\JP_ENGINE\jp-engine can still run in CI.
+          $expected = "C:\Dev\JP_ENGINE\jp-engine"
+          $parent   = Split-Path $expected -Parent
+
+          New-Item -ItemType Directory -Force -Path $parent | Out-Null
+
+          if (Test-Path $expected) {
+            try {
+              Remove-Item -LiteralPath $expected -Force -Recurse
+            } catch {
+              # If removal fails, continue and attempt to overwrite with a new junction
+            }
+          }
+
+          New-Item -ItemType Junction -Path $expected -Target $env:GITHUB_WORKSPACE | Out-Null
+
+          Write-Host "Mapped $expected -> $env:GITHUB_WORKSPACE"
+          Get-Item -LiteralPath $expected | Format-List
 
       - name: Run jp-verify
         shell: pwsh
