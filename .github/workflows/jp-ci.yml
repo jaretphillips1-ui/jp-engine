@@ -27,28 +27,51 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node (for future npm checks)
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Setup Python (for semgrep)
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      - name: Install JP toolchain (CI)
+        shell: pwsh
+        run: |
+          # Ensure Chocolatey is ready (windows-latest includes it)
+          choco --version
+
+          # OpenSSL + Gitleaks (jp-verify requires openssl; doctor uses gitleaks if present)
+          choco install openssl.light -y --no-progress
+          choco install gitleaks -y --no-progress
+
+          # Node CLIs jp-verify expects
+          npm install -g vercel netlify-cli
+
+          # Python tools jp-verify expects
+          python -m pip install --upgrade pip
+          python -m pip install pipx
+          pipx --version
+          pipx install pre-commit
+          pre-commit --version
+
+          # Print versions for logs
+          git --version
+          gh --version
+          openssl version
+          node --version
+          npm --version
+          vercel --version
+          netlify --version
+          gitleaks version
+
       - name: Install semgrep (pinned)
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install "semgrep==${env:SEMGREP_VERSION}"
+          python -m pip install "semgrep==${env:SEMGREP_VERSION}"
           semgrep --version
-
-      - name: Install gitleaks
-        shell: pwsh
-        run: |
-          choco install gitleaks -y --no-progress
-          gitleaks version
 
       - name: Run jp-verify
         shell: pwsh
