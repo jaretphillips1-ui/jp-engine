@@ -22,6 +22,14 @@ try {
     & $verify -NoStop
   } -ExpectRegex @("(?m)^\s*VERIFY — PASS\s*$","(?m)^\s*NO PASTE NEEDED") | Out-Null
 
+  Invoke-JpStep -Label "DOCTOR" -Command {
+    $doctor = Join-Path $repoRoot "scripts\jp-doctor.ps1"
+    if (-not (Test-Path -LiteralPath $doctor)) { throw "jp-doctor.ps1 not found." }
+    & $doctor
+
+    # Token must be on stdout so jp-step can assert it (Write-Host may not be captured)
+    Write-Output "JP Doctor PASSED"
+  } -ExpectRegex @("JP Doctor PASSED") -ShowOutputOnPass | Out-Null
   Invoke-JpStep -Label "GIT STATUS" -Command { git status } -ExpectRegex @("working tree clean") -ShowOutputOnPass | Out-Null
   Invoke-JpStep -Label "GIT LOG"    -Command { git log -1 --oneline } -ExpectRegex @("^[0-9a-f]{7,40}\s") -ShowOutputOnPass | Out-Null
 
