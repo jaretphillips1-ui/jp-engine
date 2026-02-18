@@ -94,7 +94,10 @@ if ($didStash) {
 
 # ====== RUN VERIFY + DOCTOR ======
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-verify.ps1
+if ($LASTEXITCODE -ne 0) { throw "jp-verify.ps1 failed with exit code $LASTEXITCODE" }
+
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-doctor.ps1
+if ($LASTEXITCODE -ne 0) { throw "jp-doctor.ps1 failed with exit code $LASTEXITCODE" }
 
 # ====== STAGE + PRE-COMMIT + COMMIT ======
 git add -A
@@ -102,27 +105,23 @@ Assert-GitOk "git add -A"
 
 if (Get-Command pre-commit -ErrorAction SilentlyContinue) {
   pre-commit run --all-files
+  if ($LASTEXITCODE -ne 0) { throw "pre-commit run --all-files failed with exit code $LASTEXITCODE" }
+
   git add -A
   Assert-GitOk "git add -A (after pre-commit)"
 } else {
-  Write-Host "pre-commit not found (ok) ΓÇö skipping explicit run."
+  Write-Host "pre-commit not found (ok) — skipping explicit run."
 }
 
 $didCommit = $false
-if (git diff --cached --quiet) {
-  Write-Host ""
-  Write-Host "No staged changes to commit."
-} else {
-  # Guard: only commit if there is a staged diff
-  & git diff --cached --quiet
-  if ($LASTEXITCODE -eq 0) {
-    Write-Host "No staged diff -> skipping git commit."
-  } else {
-    git commit -m $CommitMessage | Out-Null
-    Assert-GitOk "git commit"
-    $didCommit = $true
-  }
 
+# Only commit if there is an actual staged diff
+& git diff --cached --quiet
+if ($LASTEXITCODE -eq 0) {
+  Write-Host ""
+  Write-Host "No staged diff -> skipping git commit."
+} else {
+  git commit -m $CommitMessage | Out-Null
   Assert-GitOk "git commit"
   $didCommit = $true
 }
