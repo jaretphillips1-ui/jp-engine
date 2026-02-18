@@ -1,146 +1,136 @@
-<#
-JP ENGINE — Start-JPWork (one-button start workflow)
-- Gates to repo root
-- Syncs master (fetch/prune + pull --ff-only)
-- Ensures clean tree (or optional -Stash)
-- Creates feature branch
-- Runs verify + doctor (if present)
-#>
-
-[CmdletBinding()]
 param(
-  [Parameter(Mandatory = $false)]
-  [string]$BranchName,
+  [string]$ExpectedRepo   = 'C:\Dev\JP_ENGINE\jp-engine',
+  [string]$BaseBranch     = 'master',
+  [string]$BranchPrefix   = 'work',
+  [bool]  $AutoStash      = $true,
 
-  [Parameter(Mandatory = $false)]
-  [switch]$Stash,
+  # If there are staged changes, commit with this message; otherwise do NOT create noise commits.
+  [string]$CommitMessage  = 'work: update',
 
-  [Parameter(Mandatory = $false)]
-  [switch]$SkipVerify,
-
-  [Parameter(Mandatory = $false)]
-  [switch]$SkipDoctor
+  # If there is nothing to commit, do NOT push an empty branch to origin.
+  [bool]  $PushOnlyIfCommit = $true
 )
 
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 
-function Fail([string]$Message) { throw $Message }
-
-function Find-RepoRootFromScript {
-  $root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')
-  return $root.Path
+function Normalize-Path([string]$p) {
+  if ([string]::IsNullOrWhiteSpace($p)) { return "" }
+  try { $p = (Resolve-Path -LiteralPath $p).Path } catch { }
+  $p = $p -replace '/', '\'
+  $p = $p.TrimEnd('\')
+  if ($IsWindows) { $p = $p.ToLowerInvariant() }
+  return $p
 }
 
-function Assert-JPRepoRoot([string]$Root) {
-  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git'))) { Fail "JP guard: Not a git repo root: missing .git at '$Root'." }
-  if (-not (Test-Path -LiteralPath (Join-Path $Root 'docs\00_JP_INDEX.md'))) { Fail "JP guard: Not jp-engine: missing docs\00_JP_INDEX.md at '$Root'." }
+function Assert-GitOk([string]$msg) {
+  if ($LASTEXITCODE -ne 0) { throw "Git failed ($LASTEXITCODE): $msg" }
 }
 
-function Git-Run([string[]]$GitArgs) {
-  & git @GitArgs | Out-Host
-  if ($LASTEXITCODE -ne 0) {
-    Fail ("Command failed: git " + ($GitArgs -join ' '))
-  }
+# ====== GATE: repo root ======
+Set-Location -LiteralPath $ExpectedRepo
+
+$top = (git rev-parse --show-toplevel 2>$null)
+if (-not $top) { throw "Safety gate: not a git repo (git rev-parse failed)." }
+
+$expectedNorm = Normalize-Path $ExpectedRepo
+$topNorm      = Normalize-Path $top.Trim()
+
+if ($topNorm -ne $expectedNorm) {
+  throw "Safety gate: expected repo '$expectedNorm', got '$topNorm'"
 }
 
-function Git-Out([string[]]$GitArgs) {
-  $out = & git @GitArgs 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    if ($out) { Write-Host ($out | Out-String).TrimEnd() }
-    Fail ("Command failed: git " + ($GitArgs -join ' '))
-  }
-  return ($out | Out-String)
-}
+# ====== DIRTY CHECK + OPTIONAL STASH ======
+$dirty = @(git status --porcelain)
+$didStash = $false
 
-function Ensure-CleanOrStash {
-  $status = (Git-Out @('status','--porcelain')).Trim()
-  if ([string]::IsNullOrWhiteSpace($status)) { return }
+if ($dirty.Count -gt 0) {
+  Write-Host "=== DIRTY WORKING TREE DETECTED ==="
+  $dirty | ForEach-Object { Write-Host $_ }
+  Write-Host ""
 
-  if (-not $Stash) {
-    Write-Host $status
-    Fail "JP guard: Working tree is not clean. Commit/stash manually, or re-run with -Stash."
-  }
-
-  $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-  Git-Run @('stash','push','-u','-m',("JP Start-JPWork autosave " + $stamp))
-
-  $status2 = (Git-Out @('status','--porcelain')).Trim()
-  if (-not [string]::IsNullOrWhiteSpace($status2)) {
-    Write-Host $status2
-    Fail "JP guard: Tried to stash but working tree still not clean."
-  }
-  Write-Host "Stashed local changes (including untracked)."
-}
-
-function Ensure-OnMasterAndSynced {
-  $branch = (Git-Out @('branch','--show-current')).Trim()
-  if ($branch -ne 'master') {
-    Git-Run @('checkout','master')
+  if (-not $AutoStash) {
+    throw "Safety gate: working tree dirty. Commit/stash first (AutoStash is OFF)."
   }
 
-  Git-Run @('fetch','--prune')
-  Git-Run @('pull','--ff-only')
+  $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+  $msg   = "AUTO-STASH before feature branch ($stamp)"
+  git stash push -u -m $msg | Out-Null
+  Assert-GitOk "git stash push"
+  $didStash = $true
+
+  Write-Host "Stashed changes: $msg"
+  Write-Host ""
 }
 
-function Resolve-BranchName {
-  if (-not [string]::IsNullOrWhiteSpace($BranchName)) { return $BranchName.Trim() }
-  $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-  return ("feat/" + $stamp)
-}
+# ====== UPDATE BASE + CREATE BRANCH ======
+git fetch origin | Out-Null
+Assert-GitOk "git fetch origin"
 
-function Assert-BranchDoesNotExist([string]$Name) {
-  $local = (Git-Out @('branch','--list',$Name)).Trim()
-  if (-not [string]::IsNullOrWhiteSpace($local)) {
-    Fail "JP guard: Branch already exists locally: '$Name'. Choose a different -BranchName."
-  }
+git switch $BaseBranch | Out-Null
+Assert-GitOk "git switch $BaseBranch"
 
-  $remotes = (Git-Out @('remote')).Split([Environment]::NewLine, [System.StringSplitOptions]::RemoveEmptyEntries)
-  if ($remotes -contains 'origin') {
-    $remoteMatch = (Git-Out @('ls-remote','--heads','origin',$Name)).Trim()
-    if (-not [string]::IsNullOrWhiteSpace($remoteMatch)) {
-      Fail "JP guard: Branch already exists on origin: '$Name'. Choose a different -BranchName."
-    }
-  }
-}
+git pull --ff-only | Out-Null
+Assert-GitOk "git pull --ff-only"
 
-function Run-IfExists([string]$PathFromRoot, [string]$Label) {
-  $root = Find-RepoRootFromScript
-  $full = Join-Path $root $PathFromRoot
-  if (-not (Test-Path -LiteralPath $full)) {
-    Write-Host ("Skipping {0} (missing: {1})" -f $Label, $PathFromRoot)
-    return
-  }
-
-  Write-Host ("Running {0}: {1}" -f $Label, $PathFromRoot)
-  & pwsh -NoProfile -ExecutionPolicy Bypass -File $full | Out-Host
-  if ($LASTEXITCODE -ne 0) { Fail ("Command failed: pwsh -File " + $full) }
-}
-
-# ---- main ----
-$repoRoot = Find-RepoRootFromScript
-Assert-JPRepoRoot -Root $repoRoot
-Set-Location -LiteralPath $repoRoot
-
-Write-Host "JP Start-JPWork — repo root: $repoRoot"
-
-& git --version | Out-Host
-if ($LASTEXITCODE -ne 0) { Fail "JP guard: git is required but failed to run." }
-
-Ensure-CleanOrStash
-Ensure-OnMasterAndSynced
-Ensure-CleanOrStash
-
-$targetBranch = Resolve-BranchName
-Assert-BranchDoesNotExist -Name $targetBranch
-
-Git-Run @('checkout','-b',$targetBranch)
-Write-Host "Created and switched to: $targetBranch"
-
-if (-not $SkipVerify) { Run-IfExists -PathFromRoot 'scripts\jp-verify.ps1'  -Label 'verify' }
-if (-not $SkipDoctor) { Run-IfExists -PathFromRoot 'scripts\jp-doctor.ps1'  -Label 'doctor' }
+$stamp2 = Get-Date -Format 'yyyyMMdd-HHmm'
+$branch = "$BranchPrefix/$stamp2"
+git switch -c $branch | Out-Null
+Assert-GitOk "git switch -c $branch"
 
 Write-Host ""
-Write-Host "READY ✅"
-Write-Host ("Branch: " + (Git-Out @('branch','--show-current')).Trim())
-Write-Host "Next: make your changes, commit, open PR (PR-only merges)."
+Write-Host "Now on: $branch @ $(git rev-parse --short HEAD)"
+Write-Host ""
+
+if ($didStash) {
+  Write-Host "Re-applying stashed work onto this new branch..."
+  git stash pop | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "git stash pop had conflicts or failed. Resolve, then continue manually."
+  }
+  Write-Host "Stash applied."
+  Write-Host ""
+}
+
+# ====== RUN VERIFY + DOCTOR ======
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-verify.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-doctor.ps1
+
+# ====== STAGE + PRE-COMMIT + COMMIT ======
+git add -A
+Assert-GitOk "git add -A"
+
+if (Get-Command pre-commit -ErrorAction SilentlyContinue) {
+  pre-commit run --all-files
+  git add -A
+  Assert-GitOk "git add -A (after pre-commit)"
+} else {
+  Write-Host "pre-commit not found (ok) ΓÇö skipping explicit run."
+}
+
+$didCommit = $false
+if (git diff --cached --quiet) {
+  Write-Host ""
+  Write-Host "No staged changes to commit."
+} else {
+  git commit -m $CommitMessage
+  Assert-GitOk "git commit"
+  $didCommit = $true
+}
+
+# ====== PUSH (optional) ======
+if ($PushOnlyIfCommit -and (-not $didCommit)) {
+  Write-Host ""
+  Write-Host "No commit was created, so NOT pushing this branch (PushOnlyIfCommit = true)."
+  Write-Host "If you still want to push it, run:"
+  Write-Host "  git push -u origin $branch"
+  Write-Host ""
+} else {
+  git push -u origin $branch | Out-Null
+  Assert-GitOk "git push -u origin $branch"
+}
+
+Write-Host ""
+Write-Host "Done."
+Write-Host "Branch: $branch"
+Write-Host "Next: run scripts\jp-publish-work.ps1 (separate step)."
