@@ -65,24 +65,33 @@ function Assert-ChecksGreen {
   $rollup = Get-StatusRollup -Pr $Pr -Repo $Repo
   if ($rollup.Count -eq 0) { Fail "No checks found in statusCheckRollup; refusing to merge." }
 
-  $pending = @($rollup | Where-Object { $_.state -in @('PENDING','IN_PROGRESS','QUEUED') })
+  function Get-CheckState([object]$c) {
+    $st = $null
+    if ($null -ne $c.PSObject.Properties['conclusion']) { $st = $c.conclusion }
+    if (-not $st -and $null -ne $c.PSObject.Properties['state']) { $st = $c.state }
+    if (-not $st -and $null -ne $c.PSObject.Properties['status']) { $st = $c.status }
+    if (-not $st) { $st = 'UNKNOWN' }
+    return ($st.ToString().Trim().ToUpperInvariant())
+  }
+
+  $pending = @($rollup | Where-Object { (Get-CheckState $_) -in @('PENDING','IN_PROGRESS','QUEUED') })
   if ($pending.Count -gt 0) {
     "Pending checks:"
-    $pending | ForEach-Object { " - $($_.name): $($_.state)  $($_.detailsUrl)" }
+    $pending | ForEach-Object { " - $($_.name): $(Get-CheckState $_)  $($_.detailsUrl)" }
     Fail "Refusing to merge: checks still pending."
   }
 
-  $failed = @($rollup | Where-Object { $_.state -in @('FAILURE','CANCELLED','TIMED_OUT','ACTION_REQUIRED') })
+  $failed = @($rollup | Where-Object { (Get-CheckState $_) -in @('FAILURE','CANCELLED','TIMED_OUT','ACTION_REQUIRED') })
   if ($failed.Count -gt 0) {
     "Failing checks:"
-    $failed | ForEach-Object { " - $($_.name): $($_.state)  $($_.detailsUrl)" }
+    $failed | ForEach-Object { " - $($_.name): $(Get-CheckState $_)  $($_.detailsUrl)" }
     Fail "Refusing to merge: failing checks present."
   }
 
-  $unknown = @($rollup | Where-Object { $_.state -notin @('SUCCESS','SKIPPED') })
+  $unknown = @($rollup | Where-Object { (Get-CheckState $_) -notin @('SUCCESS','SKIPPED') })
   if ($unknown.Count -gt 0) {
     "Unknown checks:"
-    $unknown | ForEach-Object { " - $($_.name): $($_.state)  $($_.detailsUrl)" }
+    $unknown | ForEach-Object { " - $($_.name): $(Get-CheckState $_)  $($_.detailsUrl)" }
     Fail "Refusing to merge: unknown check states present."
   }
 
