@@ -113,7 +113,16 @@ if (git diff --cached --quiet) {
   Write-Host ""
   Write-Host "No staged changes to commit."
 } else {
-  git commit -m $CommitMessage
+  # Guard: only commit if there is a staged diff
+  & git diff --cached --quiet
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "No staged diff -> skipping git commit."
+  } else {
+    git commit -m $CommitMessage | Out-Null
+    Assert-GitOk "git commit"
+    $didCommit = $true
+  }
+
   Assert-GitOk "git commit"
   $didCommit = $true
 }
