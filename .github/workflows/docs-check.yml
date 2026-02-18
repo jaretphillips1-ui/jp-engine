@@ -1,0 +1,38 @@
+name: Docs Check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docs integrity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $need = @(
+            'docs/00_JP_INDEX.md',
+            'docs/JP_TOOLCHAIN.md',
+            'docs/JP_SECURITY.md',
+            'docs/JP_RECOVERY.md',
+            'docs/JP_HOUSEKEEPING.md'
+          )
+
+          foreach ($p in $need) {
+            if (-not (Test-Path -LiteralPath $p)) {
+              throw "Missing required doc: $p"
+            }
+          }
+
+          $idx = Get-Content -LiteralPath 'docs/00_JP_INDEX.md' -Raw
+          if ($idx -notmatch [regex]::Escape('<!-- JP_CANONICAL_DOCS -->')) {
+            throw "docs/00_JP_INDEX.md missing marker: <!-- JP_CANONICAL_DOCS -->"
+          }
+
+          Write-Host "Docs check OK."
