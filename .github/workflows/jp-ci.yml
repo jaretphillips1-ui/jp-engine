@@ -99,8 +99,12 @@ jobs:
           pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-doctor.ps1
 
   verify_doctor_ubuntu:
-    name: Verify + Doctor (Ubuntu)
+    name: Verify + Doctor (Ubuntu, Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
     env:
       SEMGREP_VERSION: "1.151.0"
 
@@ -126,7 +130,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node }}
 
       - name: Setup Python
         uses: actions/setup-python@v6
