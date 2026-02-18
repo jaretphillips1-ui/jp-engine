@@ -1,58 +1,29 @@
-# JP Engine Housekeeping Tracker
+# JP Engine — Housekeeping Reminder
 
-After merging:
-- [ ] On default branch (master/main)
-- [ ] git pull --ff-only
-- [ ] Local feature branch deleted
-- [ ] Remote feature branch deleted (or GitHub shows deleted)
-- [ ] Working tree clean
-- [ ] If behavior changed: update docs/JP_TOOLCHAIN.md (and/or SECURITY/RECOVERY)
+Use this after merges and before shutdown.
 
-## Lessons Learned
+## After merging a PR
+- Confirm local master is synced:
+  - `git switch master`
+  - `git pull --ff-only`
+- Confirm clean working tree:
+  - `git status --porcelain` (must be empty)
+- Confirm the PR head branch is deleted:
+  - Remote: deleted by `gh pr merge --delete-branch`
+  - Local: delete the feature branch if it still exists
 
-- Never `-match` on string arrays (join first, or loop deterministically).
-- Always rewrite workflow from HEAD when structural YAML fixes are needed.
-- actions/checkout owns its with: block; do not attach checkout with: options to unrelated steps.
+## CI sanity
+- For any new workflow/tooling:
+  - Verify at least one full green CI run on the merge commit
+  - If "no required checks reported", treat it as unknown (use status rollup)
 
-A lightweight checklist to keep momentum while ensuring we don’t forget small cleanup items.
+## Security quick checks
+- Run `scripts\jp-doctor.ps1` (repo-scoped scanners)
+- If anything fails, fix the first failure only, smallest change, rerun
 
-## Daily start gate (every session)
-- [ ] Open PowerShell in the JP repo root (must contain `.git` and `docs/00_JP_INDEX.md`)
-- [ ] `git checkout master`
-- [ ] `git pull --ff-only`
-- [ ] `git status --porcelain` is empty (clean)
+## Backup/restore points (lightweight)
+- Prefer keeping at least one known-green reference (tag or note) for the last 24h baseline
+- Avoid overwriting the “latest green” marker without a dated restore point
 
-## Before pushing a PR
-- [ ] Working tree clean (no accidental files)
-- [ ] CI scope is single-track (only the intended change)
-- [ ] Commit message is sane and specific
-- [ ] If CI config changed: confirm it’s minimal and doesn’t touch unrelated jobs
-
-## If CI goes red (strict rule)
-- [ ] Look ONLY at the first failing check/step
-- [ ] Apply the smallest possible fix
-- [ ] Commit
-- [ ] Re-run checks
-
-## Merge + re-anchor (after PR is green)
-- [ ] Squash merge (unless explicitly doing otherwise)
-- [ ] Delete remote feature branch (if missed)
-- [ ] Sync local master:
-  - [ ] `git checkout master`
-  - [ ] `git pull --ff-only`
-  - [ ] `git fetch --prune`
-- [ ] Confirm clean working tree again
-
-## Local branch hygiene (weekly or after a burst)
-- [ ] List local `ci/*` and `docs/*` branches
-- [ ] Delete only branches that are fully merged into `master`
-- [ ] If a branch is unmerged but not active: push it and “park” it intentionally
-
-## Documentation touchpoints (only when relevant)
-- [ ] If toolchain requirements change: update `docs/JP_TOOLCHAIN.md`
-- [ ] If security/guardrails change: update `docs/JP_SECURITY.md`
-- [ ] If recovery/restore process changes: update `docs/JP_RECOVERY.md`
-
-## Notes
-- Keep this doc short.
-- The goal is: **clean baselines, minimal diffs, reliable rhythm**.
+## Commands
+- Show reminder (script): `pwsh -File .\scripts\jp-housekeeping.ps1`
