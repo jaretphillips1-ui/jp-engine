@@ -24,27 +24,32 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node (needed by verify)
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Install CLI deps (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          npm i -g vercel netlify-cli
+          $npmBin = npm bin -g
+          "$npmBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          vercel --version
+          netlify --version
 
       - name: Install CLI deps (Ubuntu)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
-          # vercel + netlify are required by jp-verify tooling checks
           npm i -g vercel netlify-cli
-
-          # pipx + pre-commit are required by jp-verify tooling checks
           python3 -m pip install --user --upgrade pip pipx
           python3 -m pipx ensurepath
-
-          # Make sure user bin is on PATH for subsequent steps
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-          # Install pre-commit via pipx
           pipx install pre-commit || pipx upgrade pre-commit
 
       - name: Run jp-smoke
