@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: ["master"]
   schedule:
-    # Weekly scan — Sundays at 03:00 UTC
+    # Weekly scan ΓÇö Sundays at 03:00 UTC
     - cron: "0 3 * * 0"
   workflow_dispatch: {}
 
@@ -23,15 +23,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Run pre-commit (CI enforce)
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install pre-commit
           pre-commit run --all-files
-        with:
-          fetch-depth: 0
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -96,15 +95,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Run pre-commit (CI enforce)
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install pre-commit
           pre-commit run --all-files
-        with:
-          fetch-depth: 0
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
