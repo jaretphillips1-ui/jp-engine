@@ -19,8 +19,12 @@ concurrency:
 
 jobs:
   verify_doctor_windows:
-    name: Verify + Doctor (Windows)
+    name: Verify + Doctor (Windows, Node ${{ matrix.node }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
     env:
       SEMGREP_VERSION: "1.151.0"
 
@@ -46,7 +50,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node }}
 
       - name: Setup Python
         uses: actions/setup-python@v6
