@@ -16,3 +16,10 @@ This folder is the single source of truth for how JP Engine is run, recovered, a
 - JP_ENGINE_MASTER_PLAN.md
 - JP_ENGINE_DOCTRINE.md
 - JP_ENGINE_STARTER_KIT.md
+
+<!-- JP_CANONICAL_DOCS -->
+## Canonical Docs
+- [JP Toolchain](JP_TOOLCHAIN.md)
+- [JP Security](JP_SECURITY.md)
+- [JP Recovery](JP_RECOVERY.md)
+- [JP Housekeeping](JP_HOUSEKEEPING.md)
