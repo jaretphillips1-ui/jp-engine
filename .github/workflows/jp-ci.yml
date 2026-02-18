@@ -25,6 +25,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Toolchain versions
+        shell: pwsh
+        run: |
+          git --version
+          pwsh --version
+          python --version 2>$null; if ($LASTEXITCODE -ne 0) { "python not found" }
+          node --version 2>$null; if ($LASTEXITCODE -ne 0) { "node not found" }
+          npm --version 2>$null; if ($LASTEXITCODE -ne 0) { "npm not found" }
       - name: Run pre-commit (CI enforce)
         shell: pwsh
         run: |
@@ -97,6 +105,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Toolchain versions
+        shell: pwsh
+        run: |
+          git --version
+          pwsh --version
+          python --version 2>$null; if ($LASTEXITCODE -ne 0) { "python not found" }
+          node --version 2>$null; if ($LASTEXITCODE -ne 0) { "node not found" }
+          npm --version 2>$null; if ($LASTEXITCODE -ne 0) { "npm not found" }
       - name: Run pre-commit (CI enforce)
         shell: pwsh
         run: |
