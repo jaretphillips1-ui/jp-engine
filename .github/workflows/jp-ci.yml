@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: jp-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify_doctor_windows:
     name: Verify + Doctor (Windows)
