@@ -73,7 +73,9 @@ Start a safe feature branch session with a single command, leaving the repo in a
 
 ---
 
-## Publish-JPWork (Publish Workflow) — Contract (Design Only)
+## Publish-JPWork (Publish Workflow) — Contract
+
+This workflow is fully implemented and enforced by scripts/jp-publish-work.ps1.
 
 ### Intent
 Publish a feature branch safely:
@@ -85,7 +87,7 @@ Publish a feature branch safely:
 - sync `master`
 - run post-merge cleanup
 
-### Inputs (Proposed)
+### Inputs
 - `-Title <string>` (optional; PR title)
 - `-Body <string>` (optional; PR body)
 - `-Draft` (optional)
