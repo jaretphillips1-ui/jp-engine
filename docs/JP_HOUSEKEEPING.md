@@ -1,29 +1,48 @@
-# JP Engine — Housekeeping Reminder
+# JP Engine — Housekeeping (Reminder + Tracker)
 
-Use this after merges and before shutdown.
-
-## After merging a PR
-- Confirm local master is synced:
+## Quick reminder (after merges + before shutdown)
+- Sync default branch:
   - `git switch master`
   - `git pull --ff-only`
-- Confirm clean working tree:
+- Confirm clean tree:
   - `git status --porcelain` (must be empty)
-- Confirm the PR head branch is deleted:
-  - Remote: deleted by `gh pr merge --delete-branch`
+- Confirm feature branch cleanup:
+  - Remote: `gh pr merge --delete-branch` (preferred)
   - Local: delete the feature branch if it still exists
+- CI sanity (if you changed workflows/tooling):
+  - Confirm at least one full green CI run on the merge commit
+  - If you ever see “no required checks reported”, treat that as unknown and use a rollup check
 
-## CI sanity
-- For any new workflow/tooling:
-  - Verify at least one full green CI run on the merge commit
-  - If "no required checks reported", treat it as unknown (use status rollup)
+## Tracker (lightweight)
+### Daily start gate (every session)
+- [ ] Open PowerShell in JP repo root (must contain `.git`)
+- [ ] `git switch master`
+- [ ] `git pull --ff-only`
+- [ ] `git status --porcelain` is empty
 
-## Security quick checks
-- Run `scripts\jp-doctor.ps1` (repo-scoped scanners)
-- If anything fails, fix the first failure only, smallest change, rerun
+### Before pushing a PR
+- [ ] Working tree clean (no accidental files)
+- [ ] One-track CI loop (fix first failure only, smallest change)
+- [ ] Commit message is specific + sane
+- [ ] If CI config changed: confirm minimal diff + rerun CI
 
-## Backup/restore points (lightweight)
-- Prefer keeping at least one known-green reference (tag or note) for the last 24h baseline
-- Avoid overwriting the “latest green” marker without a dated restore point
+### Merge + re-anchor (after PR is green)
+- [ ] Squash merge (unless explicitly doing otherwise)
+- [ ] Delete remote feature branch (or confirm GitHub shows deleted)
+- [ ] Sync local master:
+  - [ ] `git switch master`
+  - [ ] `git pull --ff-only`
+  - [ ] `git fetch --prune`
+- [ ] Confirm clean tree again
+
+### Security quick checks (when relevant)
+- [ ] `.\scripts\jp-doctor.ps1`
+- [ ] If anything fails: fix first failure only, rerun
+
+### Restore points (keep at least 24h of safety)
+- [ ] Keep a dated known-green restore point (tag or note)
+- [ ] Don’t overwrite “latest green” without a dated restore point
 
 ## Commands
 - Show reminder (script): `pwsh -File .\scripts\jp-housekeeping.ps1`
+- Merge helper (script): `pwsh -File .\scripts\jp-merge-pr.ps1 -PrNumber <n>`
