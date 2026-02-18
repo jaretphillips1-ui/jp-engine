@@ -35,11 +35,20 @@ jobs:
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
+
+          # npm CLIs
           npm i -g vercel netlify-cli
           $npmBin = npm bin -g
           "$npmBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
           vercel --version
           netlify --version
+
+          # pipx + pre-commit
+          python -m pip install --upgrade pip pipx
+          python -m pipx ensurepath
+          "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          pipx install pre-commit || pipx upgrade pre-commit
+          pre-commit --version
 
       - name: Install CLI deps (Ubuntu)
         if: runner.os == 'Linux'
