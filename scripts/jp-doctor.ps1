@@ -270,7 +270,17 @@ if (-not $NoSemgrep) {
       Write-Warn "semgrep not found in PATH. Skipping. (Install optional)"
       return
     }
-    & semgrep --config auto --error --quiet
+
+    try {
+      & semgrep --config auto --error --quiet
+    } catch {
+      $msg = ($_ | Out-String).Trim()
+      if ($msg -match "Application Control policy has blocked" -or $msg -match "blocked this file") {
+        Write-Warn "semgrep is blocked by Application Control on this machine. Skipping semgrep."
+        return
+      }
+      throw
+    }
   }) ([ref]$failures)
 } else {
   Write-Warn "Skipping semgrep (NoSemgrep)"
