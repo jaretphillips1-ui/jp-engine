@@ -9,8 +9,10 @@ param(
   [Parameter(Mandatory=$false)]
   [string]$RepoRoot = (Get-Location).Path,
 
+  # Dry-run mode. Alias "WhatIf" provided for convenience, but we avoid $WhatIf name conflicts.
   [Parameter(Mandatory=$false)]
-  [switch]$WhatIf
+  [Alias('WhatIf')]
+  [switch]$DryRun
 )
 
 Set-StrictMode -Version Latest
@@ -102,8 +104,8 @@ foreach ($b in $toConsider) {
     continue
   }
 
-  if ($WhatIf) {
-    Write-Host "WHATIF delete: $b" -ForegroundColor Cyan
+  if ($DryRun) {
+    Write-Host "DRYRUN delete: $b" -ForegroundColor Cyan
     continue
   }
 
