@@ -50,6 +50,21 @@ List recent:
 ## 5) Handoff template
 Use:
 - `docs/JP_HANDOFF_TEMPLATE.md`
+## One-button workflow (copy/paste)
+
+Start a new work branch (runs Doctor by default):
+
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-start-work.ps1 -Slug '<short-slug>'`
+
+Publish (creates/reuses PR, watches checks, squash merges, syncs master, smoke, tags green):
+
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-publish-work.ps1`
+
+Hard stops (by design):
+
+- Working tree must be clean before start/publish.
+- If there are no commits vs `master`, publishing stops (empty PR protection).
+
 
 Keep the handoff factual:
 - branch, PR link, what changed, what’s next.
