@@ -1,3 +1,5 @@
+. (Join-Path $PSScriptRoot 'lib\jp-gh-auth.ps1')
+
 param(
   [switch]$ShowAuthStatus,
 
@@ -116,11 +118,7 @@ function Get-HeadRef {
 
 Assert-RepoRoot
 Assert-CleanTree
-  if ($ShowAuthStatus) {
-    gh auth status -h github.com
-  } else {
-    & gh auth status -h github.com 1>$null 2>$null
-  }
+  Ensure-GhAuth -ShowAuthStatus:$ShowAuthStatus
 "=== JP: MERGE PR #$PrNumber ==="
 Assert-ChecksGreen -Pr $PrNumber -Repo $Repo
 Assert-Mergeable  -Pr $PrNumber -Repo $Repo

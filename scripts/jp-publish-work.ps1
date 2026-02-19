@@ -1,3 +1,5 @@
+. (Join-Path $PSScriptRoot 'lib\jp-gh-auth.ps1')
+
 # JP Engine - One-button publish workflow
 # Creates or updates a PR for the current work/* branch, watches checks, merges (squash + delete branch),
 # syncs local master, then deletes the local feature branch.
@@ -101,16 +103,6 @@ function Assert-HasDiffVsBase([string]$BaseBranch, [string]$Branch) {
   $n = Get-CommitCountVsBase -BaseBranch $BaseBranch -Branch $Branch
   if ($n -le 0) { throw "Refusing: no commits between $BaseBranch and $Branch." }
 }
-
-function Ensure-GhAuth() {
-  if ($ShowAuthStatus) {
-    gh auth status -h github.com
-  } else {
-    & gh auth status -h github.com 1>$null 2>$null
-  }
-  if ($LASTEXITCODE -ne 0) { throw "gh auth status failed." }
-}
-
 function Ensure-RemoteUpdated() {
   git fetch origin --prune | Out-Host
   if ($LASTEXITCODE -ne 0) { throw "git fetch failed." }
