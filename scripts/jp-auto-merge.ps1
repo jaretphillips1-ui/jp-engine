@@ -62,6 +62,60 @@ function Notify([string]$title, [string]$msg){
   try { [console]::Beep(700,200) } catch {}
 }
 
+# --- WATCH SAFETY (Ctrl+C guard + lockfile breadcrumb) ---
+$script:JP_CloseGuardUnlocked = $false
+$script:JP_CloseGuardEnabled  = $false
+$script:JP_LockFilePath       = $null
+
+function Enable-JPCloseGuard {
+  param([string]$PrUrl)
+
+  if ($script:JP_CloseGuardEnabled) { return }
+  $script:JP_CloseGuardEnabled = $true
+  $script:JP_CloseGuardUnlocked = $false
+
+  try {
+    $safe = ($PrUrl -replace '[^a-zA-Z0-9\.\-_]+','_')
+    $script:JP_LockFilePath = Join-Path $env:TEMP ("jp-auto-merge-watch_" + $safe + ".lock.txt")
+    $stamp = (Get-Date).ToString('s')
+    $msg = @(
+      "JP AUTO-MERGE WATCH MODE LOCK",
+      "time: $stamp",
+      "pr:   $PrUrl",
+      "note: If the window closes, re-run jp-auto-merge with -WaitForMerge -PostMerge using this PR URL."
+    ) -join "`r`n"
+    [IO.File]::WriteAllText($script:JP_LockFilePath, $msg, (New-Object Text.UTF8Encoding($false)))
+  } catch {}
+
+  try {
+    $null = Register-EngineEvent -SourceIdentifier ConsoleCancelEventHandler -Action {
+      try {
+        if (-not $script:JP_CloseGuardUnlocked) {
+          Write-Host ""
+          Write-Host "===================================================" -ForegroundColor Yellow
+          Write-Host " CTRL+C pressed while WATCH MODE ACTIVE" -ForegroundColor Yellow
+          Write-Host " Type UNLOCK then press Enter to exit early." -ForegroundColor Yellow
+          Write-Host "===================================================" -ForegroundColor Yellow
+          $resp = Read-Host "UNLOCK to stop (anything else continues)"
+          if ($resp -eq 'UNLOCK') { $script:JP_CloseGuardUnlocked = $true; exit 130 }
+          return
+        }
+      } catch {}
+    } | Out-Null
+  } catch {}
+}
+
+function Disable-JPCloseGuard {
+  $script:JP_CloseGuardUnlocked = $true
+  $script:JP_CloseGuardEnabled  = $false
+  try {
+    if ($script:JP_LockFilePath -and (Test-Path -LiteralPath $script:JP_LockFilePath)) {
+      Remove-Item -LiteralPath $script:JP_LockFilePath -Force -ErrorAction SilentlyContinue
+    }
+  } catch {}
+}
+# --- END WATCH SAFETY ---
+
 function Get-PrInfo {
   param([string]$PrUrl,[string]$Repo)
 
@@ -127,6 +181,8 @@ if ($WaitForMerge) {
   Write-Host "=============================================" -ForegroundColor Yellow
   Write-Host ""
 
+  Enable-JPCloseGuard -PrUrl $PrUrl
+
   $start = Get-Date
   $lastReminder = Get-Date
 
@@ -137,12 +193,14 @@ if ($WaitForMerge) {
     Write-Host "=== SMART FALLBACK: WATCH CHECKS + MERGE (auto-merge unavailable) ===" -ForegroundColor Yellow
     & gh pr checks $PrUrl --repo $Repo --watch --interval $IntervalSeconds | Out-Host
     if ($LASTEXITCODE -ne 0) {
+      Disable-JPCloseGuard
       Notify "JP AUTO-MERGE (STOP)" "Checks watch failed. Not merging."
       Fail "gh pr checks failed (exit $LASTEXITCODE). STOP."
     }
 
     & gh pr merge $PrUrl --repo $Repo --squash --delete-branch 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) {
+      Disable-JPCloseGuard
       Notify "JP AUTO-MERGE (STOP)" "Fallback merge failed. Check PR/branch protections."
       Fail "Fallback merge failed (exit $LASTEXITCODE). STOP."
     }
@@ -166,15 +224,18 @@ if ($WaitForMerge) {
 
     if ($mergedAt) {
       Write-Host "MergedAt: $mergedAt"
+      Disable-JPCloseGuard
       break
     }
 
     if ($state -eq 'CLOSED') {
+      Disable-JPCloseGuard
       Notify "JP AUTO-MERGE (STOP)" "PR is CLOSED but not merged. No local actions run."
       Fail "PR is CLOSED but mergedAt is empty. STOP."
     }
 
     if (((Get-Date) - $start).TotalMinutes -ge $TimeoutMinutes) {
+      Disable-JPCloseGuard
       Notify "JP AUTO-MERGE (TIMEOUT)" "PR did not merge within $TimeoutMinutes minutes. Check GitHub."
       Fail "Timeout waiting for merge."
     }
