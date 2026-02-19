@@ -95,11 +95,22 @@ if ($EnableAutoMerge) {
   }
 }
 
+# If we are NOT waiting, we're not acting as a watcher. Safe to close this window after requesting auto-merge.
+if (-not $WaitForMerge) {
+  Write-Host "NOTE: -WaitForMerge not set. Safe to close this window after enabling auto-merge."
+}
+
 # 2) Optional wait loop (uses mergedAt)
 if ($WaitForMerge) {
   Write-Host ""
   Write-Host "=== WAIT FOR MERGE ==="
+  Write-Host "=============================================" -ForegroundColor Yellow
+  Write-Host " WAIT MODE ACTIVE — DO NOT CLOSE THIS WINDOW " -ForegroundColor Yellow
+  Write-Host "=============================================" -ForegroundColor Yellow
+  Write-Host ""
+
   $start = Get-Date
+  $lastReminder = Get-Date
 
   while ($true) {
     $state = ''
@@ -135,6 +146,12 @@ if ($WaitForMerge) {
     $secs = [int]((Get-Date) - $start).TotalSeconds
     $autoTxt = if ($auto) { 'AUTO=ON' } else { 'AUTO=OFF' }
     Write-Host ("…waiting  state={0}  mergeStateStatus={1}  {2}  t={3}s" -f $state,$mergeStateStatus,$autoTxt,$secs)
+
+    if (((Get-Date) - $lastReminder).TotalSeconds -ge 30) {
+      Write-Host "(REMINDER) Waiting for merge — keep this window open."
+      $lastReminder = Get-Date
+    }
+
     Start-Sleep -Seconds $IntervalSeconds
   }
 
