@@ -14,20 +14,17 @@ param(
 )
 
 Set-StrictMode -Version Latest
+. "$PSScriptRoot\lib\jp-gh-auth.ps1"
 . "$PSScriptRoot\lib\jp-assert.ps1"
 $ErrorActionPreference = 'Stop'
 
 function Fail([string]$m) { throw $m }
 
-function Assert-RepoRoot {
-  $git = Join-Path (Get-Location) '.git'
-  if (-not (Test-Path -LiteralPath $git)) { Fail "Run from repo root. Current: $((Get-Location).Path)" }
-}
 
-function Assert-CleanTree {
-  $porc = git status --porcelain
-  if ($porc) { Fail "Working tree not clean.`n$porc" }
-}
+
+
+
+
 
 function Get-RequiredChecksSafe {
   param([int]$Pr, [string]$Repo)
@@ -117,7 +114,7 @@ function Get-HeadRef {
   return $h
 }
 
-Assert-RepoRoot
+Assert-RepoRoot -RepoRoot 'C:\dev\JP_ENGINE\jp-engine' -SetLocation
 Assert-CleanTree
   Ensure-GhAuth -ShowAuthStatus:$ShowAuthStatus
 "=== JP: MERGE PR #$PrNumber ==="
