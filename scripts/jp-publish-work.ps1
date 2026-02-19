@@ -41,11 +41,21 @@ param(
   # Non-mutating preview mode
   [Parameter(Mandatory=$false)]
   [Alias('WhatIf')]
-  [switch]$DryRun
+  [switch]$DryRun,
+
+  # Explicit opt-in for live mutations (PR create/update/merge/branch delete).
+  [Parameter(Mandatory=$false)]
+  [switch]$Live
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Require explicit mode selection
+if ($DryRun -and $Live) { throw "Refusing: choose exactly one mode: -DryRun OR -Live (not both)." }
+if (-not $DryRun -and -not $Live) { throw "Refusing: you must specify -DryRun (alias -WhatIf) OR -Live." }
+
+$preview = $DryRun
 
 function Write-Section([string]$Text) {
   Write-Host ""
@@ -249,10 +259,10 @@ Write-Section "== Summary =="
 Write-Host "Branch: $curBranch" -ForegroundColor Cyan
 Write-Host "Base:   $Base" -ForegroundColor Cyan
 Write-Host "Commits vs base: $commitCount" -ForegroundColor Cyan
-Write-Host ("Mode: " + ($(if ($DryRun) { "DRYRUN" } else { "LIVE" }))) -ForegroundColor Cyan
+Write-Host ("Mode: " + ($(if ($preview) { "DRYRUN" } else { "LIVE" }))) -ForegroundColor Cyan
 
 Write-Section "== Push current branch (safe) =="
-if ($DryRun) {
+if ($preview) {
   Write-Host "DRYRUN: git push" -ForegroundColor Cyan
 } else {
   git push | Out-Host
@@ -264,22 +274,22 @@ if ($prFound) {
   Write-Host "PR: #$($prFound.number) $($prFound.url)" -ForegroundColor Green
 }
 
-$prNum = Get-OrCreatePR -RepoFull $Repo -HeadBranch $curBranch -BaseBranch $Base -MaybeTitle $Title -MaybeBody $Body -Preview:$DryRun
-if ($prNum -eq 0 -and $DryRun) {
+$prNum = Get-OrCreatePR -RepoFull $Repo -HeadBranch $curBranch -BaseBranch $Base -MaybeTitle $Title -MaybeBody $Body -Preview:$preview
+if ($prNum -eq 0 -and $preview) {
   Write-Host "DRYRUN: PR would be created (no number yet)." -ForegroundColor Cyan
   Write-Host "DRYRUN complete." -ForegroundColor Green
   return
 }
 
-UpdatePRText -RepoFull $Repo -PrNum $prNum -MaybeTitle $Title -MaybeBody $Body -Preview:$DryRun
-WatchChecks -RepoFull $Repo -PrNum $prNum -SkipWatch:$NoWatch -Preview:$DryRun
-MergePR -RepoFull $Repo -PrNum $prNum -Preview:$DryRun
-SyncBase -BaseBranch $Base -Preview:$DryRun
-DeleteLocalBranch -Branch $curBranch -Preview:$DryRun
-MaybeTagGreen -DoTag:$TagGreenBaseline -Preview:$DryRun
+UpdatePRText -RepoFull $Repo -PrNum $prNum -MaybeTitle $Title -MaybeBody $Body -Preview:$preview
+WatchChecks -RepoFull $Repo -PrNum $prNum -SkipWatch:$NoWatch -Preview:$preview
+MergePR -RepoFull $Repo -PrNum $prNum -Preview:$preview
+SyncBase -BaseBranch $Base -Preview:$preview
+DeleteLocalBranch -Branch $curBranch -Preview:$preview
+MaybeTagGreen -DoTag:$TagGreenBaseline -Preview:$preview
 
 Write-Section "== Final status =="
-if ($DryRun) {
+if ($preview) {
   Write-Host "DRYRUN: done (no mutations performed)." -ForegroundColor Green
 } else {
   git status | Out-Host
