@@ -15,8 +15,9 @@
 # - Refuses if working tree is dirty
 # - Refuses if there are no commits vs base
 # - DryRun prints intended actions without mutating anything
-
 param(
+  [switch]$ShowAuthStatus,
+
   [Parameter(Mandatory=$false)]
   [string]$Repo = 'jaretphillips1-ui/jp-engine',
 
@@ -102,7 +103,11 @@ function Assert-HasDiffVsBase([string]$BaseBranch, [string]$Branch) {
 }
 
 function Ensure-GhAuth() {
-  gh auth status | Out-Host
+  if ($ShowAuthStatus) {
+    gh auth status -h github.com
+  } else {
+    & gh auth status -h github.com 1>$null 2>$null
+  }
   if ($LASTEXITCODE -ne 0) { throw "gh auth status failed." }
 }
 
