@@ -1,121 +1,63 @@
 param(
-  [string]$ExpectedRepo = 'C:\dev\JP_ENGINE\jp-engine',
-  [string]$BaseBranch   = 'master',
-  [string]$BranchPrefix = 'work',
-  [bool]  $AutoStash    = $true
+  [Parameter(Mandatory=$false)]
+  [string]$Slug = 'work',
+
+  [Parameter(Mandatory=$false)]
+  [switch]$RunSmoke,
+
+  [Parameter(Mandatory=$false)]
+  [switch]$AllowDirty
 )
 
-$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+function Fail([string]$m) { throw $m }
 
-function Normalize-Path([string]$p) {
-  if ([string]::IsNullOrWhiteSpace($p)) { return "" }
-  try { $p = (Resolve-Path -LiteralPath $p).Path } catch { }
-  $p = $p -replace '/', '\'
-  $p = $p.TrimEnd('\')
-  if ($IsWindows) { $p = $p.ToLowerInvariant() }
-  return $p
+$repoRoot = (git rev-parse --show-toplevel 2>$null)
+if ([string]::IsNullOrWhiteSpace($repoRoot)) { Fail "Not inside a git repo." }
+Set-Location -LiteralPath $repoRoot
+
+if (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'scripts\jp-doctor.ps1'))) { Fail "Missing scripts/jp-doctor.ps1" }
+if ($RunSmoke -and -not (Test-Path -LiteralPath (Join-Path $repoRoot 'scripts\jp-smoke.ps1'))) { Fail "Missing scripts/jp-smoke.ps1" }
+
+git checkout master | Out-Null
+git pull | Out-Null
+
+$porc = @(git status --porcelain)
+if (($porc.Count -ne 0) -and (-not $AllowDirty)) {
+  Fail ("Working tree not clean. Re-run with -AllowDirty if intentional.`n" + ($porc -join "`n"))
 }
 
-function Assert-GitOk([string]$msg) {
-  if ($LASTEXITCODE -ne 0) { throw "Git failed ($LASTEXITCODE): $msg" }
+$stamp  = (Get-Date).ToString('yyyyMMdd-HHmm')
+$slug2  = ($Slug -replace '[^a-zA-Z0-9\-]+','-').Trim('-')
+if ([string]::IsNullOrWhiteSpace($slug2)) { $slug2 = 'work' }
+$branch = "work/$stamp-$slug2"
+
+git checkout -b $branch | Out-Null
+
+"=== JP: START WORK ==="
+"Repo:   $repoRoot"
+"Branch: $branch"
+"Head:   " + (git rev-parse --short HEAD).Trim()
+"Dirty:  " + (@(git status --porcelain).Count) + " change(s)"
+""
+
+"=== JP: RUN DOCTOR ==="
+pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\jp-doctor.ps1')
+if ($LASTEXITCODE -ne 0) { Fail "jp-doctor failed (exit $LASTEXITCODE)." }
+
+if ($RunSmoke) {
+  ""
+  "=== JP: RUN SMOKE ==="
+  pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\jp-smoke.ps1')
+  if ($LASTEXITCODE -ne 0) { Fail "jp-smoke failed (exit $LASTEXITCODE)." }
 }
 
-function Get-LastGreenTag {
-  # Prefer newest tag that matches green-* by creator date; falls back gracefully.
-  $t = $null
-  try {
-    $t = (git for-each-ref --sort=-creatordate --format="%(refname:short)" "refs/tags/green-*" 2>$null | Select-Object -First 1)
-  } catch { }
-  if ($t) { return $t.Trim() }
-  return ""
-}
-
-# ====== GATE: repo root ======
-Set-Location -LiteralPath $ExpectedRepo
-
-$top = (git rev-parse --show-toplevel 2>$null)
-if (-not $top) { throw "Safety gate: not a git repo (git rev-parse failed)." }
-
-$expectedNorm = Normalize-Path $ExpectedRepo
-$topNorm      = Normalize-Path $top.Trim()
-
-if ($topNorm -ne $expectedNorm) {
-  throw "Safety gate: expected repo '$expectedNorm', got '$topNorm'"
-}
-
-# ====== DIRTY CHECK + OPTIONAL STASH ======
-$dirty = @(git status --porcelain)
-$didStash = $false
-
-if ($dirty.Count -gt 0) {
-  Write-Host "=== DIRTY WORKING TREE DETECTED ==="
-  $dirty | ForEach-Object { Write-Host $_ }
-  Write-Host ""
-
-  if (-not $AutoStash) {
-    throw "Safety gate: working tree dirty. Commit/stash first (AutoStash is OFF)."
-  }
-
-  $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-  $msg   = "AUTO-STASH before start-work ($stamp)"
-  git stash push -u -m $msg | Out-Null
-  Assert-GitOk "git stash push"
-  $didStash = $true
-
-  Write-Host "Stashed changes: $msg"
-  Write-Host ""
-}
-
-# ====== UPDATE BASE + CREATE BRANCH ======
-git fetch origin | Out-Null
-Assert-GitOk "git fetch origin"
-
-git switch $BaseBranch | Out-Null
-Assert-GitOk "git switch $BaseBranch"
-
-git pull --ff-only | Out-Null
-Assert-GitOk "git pull --ff-only"
-
-$stamp2 = Get-Date -Format 'yyyyMMdd-HHmm'
-$branch = "$BranchPrefix/$stamp2"
-git switch -c $branch | Out-Null
-Assert-GitOk "git switch -c $branch"
-
-Write-Host ""
-Write-Host "=== JP: START WORK ==="
-Write-Host "Now on: $branch @ $(git rev-parse --short HEAD)"
-Write-Host ""
-
-if ($didStash) {
-  Write-Host "Re-applying stashed work onto this new branch..."
-  git stash pop | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    throw "git stash pop had conflicts or failed. Resolve, then continue manually."
-  }
-  Write-Host "Stash applied."
-  Write-Host ""
-}
-
-# ====== RUN VERIFY + DOCTOR ======
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-verify.ps1
-if ($LASTEXITCODE -ne 0) { throw "jp-verify.ps1 failed with exit code $LASTEXITCODE" }
-
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-doctor.ps1
-if ($LASTEXITCODE -ne 0) { throw "jp-doctor.ps1 failed with exit code $LASTEXITCODE" }
-
-# ====== SUMMARY (handoff-ready) ======
-$head = (git log -1 --oneline --decorate)
-$porc2 = @(git status --porcelain)
-$green = Get-LastGreenTag
-
-Write-Host ""
-Write-Host "=== JP: SUMMARY ==="
-Write-Host ("Branch: " + (git branch --show-current).Trim())
-Write-Host ("HEAD:   " + $head)
-Write-Host ("Dirty:  " + $porc2.Count + " change(s)")
-if ($green) { Write-Host ("Green:  " + $green) } else { Write-Host "Green:  (none)" }
-Write-Host ""
-Write-Host "Next:"
-Write-Host " - Make your edits/commits intentionally"
-Write-Host " - Then use scripts\jp-publish-work.ps1 to PR/merge (separate step)"
+""
+"=== NEXT ==="
+"Make changes, then:"
+"  git status --porcelain"
+"  git diff"
+"  git add -A"
+"  git commit -m `"<message>`""
+"  git push -u origin $branch"
