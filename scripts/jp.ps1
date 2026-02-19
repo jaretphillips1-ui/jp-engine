@@ -51,7 +51,7 @@ function Run-Doctor {
 function Show-Help {
   param($Registry)
 
-  Write-Host "JP Engine CLI (registry)"
+  Write-Host "JP Engine CLI"
   Write-Host ""
   Write-Host "Usage:"
   Write-Host "  pwsh -File .\scripts\jp.ps1 <command>"
@@ -62,27 +62,68 @@ function Show-Help {
   }
 }
 
-JP-Banner -Title "JP ENGINE — CLI"
+function Import-JPCommandDefs {
+  [CmdletBinding()]
+  param([string]$CommandsDir)
 
-$Commands = @{
-  verify = @{
-    Description = "Run jp-verify"
-    Action = { Run-Verify }
+  $map = @{}
+  if (-not (Test-Path -LiteralPath $CommandsDir)) { return $map }
+
+  $files = Get-ChildItem -LiteralPath $CommandsDir -Filter '*.ps1' -File | Sort-Object Name
+  foreach ($f in $files) {
+    $def = $null
+    try {
+      # Each command file returns a hashtable like:
+      # @{ Name="x"; Description="..."; Action={ ... } }
+      $def = & $f.FullName
+    } catch {
+      JP-Log -Level ERROR -Message ("Command load failed: {0} :: {1}" -f $f.FullName, $_.Exception.Message)
+      continue
+    }
+
+    if ($null -eq $def -or $def -isnot [hashtable]) {
+      JP-Log -Level WARN -Message ("Skip (not a hashtable): {0}" -f $f.Name)
+      continue
+    }
+
+    $name = [string]$def.Name
+    if ([string]::IsNullOrWhiteSpace($name)) {
+      JP-Log -Level WARN -Message ("Skip (missing Name): {0}" -f $f.Name)
+      continue
+    }
+
+    if (-not $def.ContainsKey('Description')) { $def.Description = "" }
+    if (-not $def.ContainsKey('Action') -or ($def.Action -isnot [scriptblock])) {
+      JP-Log -Level WARN -Message ("Skip (missing Action scriptblock): {0}" -f $f.Name)
+      continue
+    }
+
+    $map[$name] = $def
   }
-  doctor = @{
-    Description = "Run jp-doctor (optional)"
-    Action = { Run-Doctor }
-  }
-  version = @{
-    Description = "Show version"
-    Action = { Write-Host (Get-JPVersionLine) }
-  }
-  help = @{
-    Description = "Show help"
-    Action = { param($r) Show-Help -Registry $r }
-  }
+
+  return $map
 }
 
+JP-Banner -Title "JP ENGINE — CLI"
+
+$Commands = @{}
+
+# Dynamic commands (scripts/commands/*.ps1)
+$dynDir = Join-Path $PSScriptRoot 'commands'
+$dyn = Import-JPCommandDefs -CommandsDir $dynDir
+foreach ($k in $dyn.Keys) { $Commands[$k] = $dyn[$k] }
+
+# Built-ins (always available)
+$Commands['version'] = @{
+  Description = "Show version"
+  Action      = { Write-Host (Get-JPVersionLine) }
+}
+$Commands['help'] = @{
+  Description = "Show help"
+  Action      = { param($r) Show-Help -Registry $r }
+}
+
+# Back-compat switches
 if ($Version) { $Command = "version" }
 if ($Help)    { $Command = "help" }
 if (-not $Command) { $Command = "help" }
@@ -92,5 +133,11 @@ if (-not $Commands.ContainsKey($Command)) {
   JP-Exit -Code 2 -Message ("Unknown command: {0}" -f $Command)
 }
 
-& $Commands[$Command].Action
+$action = $Commands[$Command].Action
+if ($Command -eq 'help') {
+  & $action $Commands
+} else {
+  & $action
+}
+
 JP-Exit -Code 0
