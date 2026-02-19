@@ -1,63 +1,42 @@
 param(
   [Parameter(Mandatory=$false)]
+  [ValidateNotNullOrEmpty()]
   [string]$Slug = 'work',
 
   [Parameter(Mandatory=$false)]
-  [switch]$RunSmoke,
-
-  [Parameter(Mandatory=$false)]
-  [switch]$AllowDirty
+  [switch]$NoDoctor
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-function Fail([string]$m) { throw $m }
+function Fail([string]$m){ throw $m }
 
-$repoRoot = (git rev-parse --show-toplevel 2>$null)
-if ([string]::IsNullOrWhiteSpace($repoRoot)) { Fail "Not inside a git repo." }
-Set-Location -LiteralPath $repoRoot
+$repoPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+Set-Location -LiteralPath $repoPath
 
-if (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'scripts\jp-doctor.ps1'))) { Fail "Missing scripts/jp-doctor.ps1" }
-if ($RunSmoke -and -not (Test-Path -LiteralPath (Join-Path $repoRoot 'scripts\jp-smoke.ps1'))) { Fail "Missing scripts/jp-smoke.ps1" }
+if (-not (Test-Path -LiteralPath (Join-Path $repoPath '.git'))) { Fail "Not a git repo: $repoPath" }
+
+$cur = (git branch --show-current).Trim()
+
+if (@(git status --porcelain).Count -ne 0) { Fail "Working tree not clean. Commit/stash first." }
 
 git checkout master | Out-Null
 git pull | Out-Null
-
-$porc = @(git status --porcelain)
-if (($porc.Count -ne 0) -and (-not $AllowDirty)) {
-  Fail ("Working tree not clean. Re-run with -AllowDirty if intentional.`n" + ($porc -join "`n"))
-}
+if (@(git status --porcelain).Count -ne 0) { Fail "Master not clean after pull (unexpected)." }
 
 $stamp  = (Get-Date).ToString('yyyyMMdd-HHmm')
-$slug2  = ($Slug -replace '[^a-zA-Z0-9\-]+','-').Trim('-')
-if ([string]::IsNullOrWhiteSpace($slug2)) { $slug2 = 'work' }
-$branch = "work/$stamp-$slug2"
+$slugOk = ($Slug -replace '[^a-zA-Z0-9\-]+','-').Trim('-')
+if ([string]::IsNullOrWhiteSpace($slugOk)) { $slugOk = 'work' }
 
+$branch = "work/$stamp-$slugOk"
 git checkout -b $branch | Out-Null
 
-"=== JP: START WORK ==="
-"Repo:   $repoRoot"
-"Branch: $branch"
-"Head:   " + (git rev-parse --short HEAD).Trim()
-"Dirty:  " + (@(git status --porcelain).Count) + " change(s)"
-""
+Write-Host "Branch created: $branch"
 
-"=== JP: RUN DOCTOR ==="
-pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\jp-doctor.ps1')
-if ($LASTEXITCODE -ne 0) { Fail "jp-doctor failed (exit $LASTEXITCODE)." }
-
-if ($RunSmoke) {
-  ""
-  "=== JP: RUN SMOKE ==="
-  pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\jp-smoke.ps1')
-  if ($LASTEXITCODE -ne 0) { Fail "jp-smoke failed (exit $LASTEXITCODE)." }
+if (-not $NoDoctor) {
+  Write-Host "Running: scripts\jp-doctor.ps1"
+  pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoPath 'scripts\jp-doctor.ps1')
+  if ($LASTEXITCODE -ne 0) { Fail "jp-doctor failed (exit $LASTEXITCODE)." }
 }
 
-""
-"=== NEXT ==="
-"Make changes, then:"
-"  git status --porcelain"
-"  git diff"
-"  git add -A"
-"  git commit -m `"<message>`""
-"  git push -u origin $branch"
+Write-Host "OK"
