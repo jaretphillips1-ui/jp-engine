@@ -37,14 +37,18 @@ function Require-RepoRoot {
   }
 }
 
-function Write-Summary([string]$label) {
-  $b = (git branch --show-current)
-if ([string]::IsNullOrWhiteSpace($b)) {
-  # CI can be detached HEAD; try a symbolic ref, else label it clearly.
-  $b = (git symbolic-ref --short -q HEAD 2>$null)
+function Get-GitBranchLabel {
+  # GitHub Actions can run in detached HEAD; do not assume a branch name exists.
+  $b = (git branch --show-current 2>$null)
+  if ([string]::IsNullOrWhiteSpace($b)) {
+    $b = (git symbolic-ref --short -q HEAD 2>$null)
+  }
+  if ([string]::IsNullOrWhiteSpace($b)) { return 'DETACHED_HEAD' }
+  return $b.Trim()
 }
-if ([string]::IsNullOrWhiteSpace($b)) { $b = 'DETACHED_HEAD' }
-$b = $b.Trim()
+function Write-Summary([string]$label) {
+  $b = Get-GitBranchLabel
+
   $h = (git log -1 --oneline --decorate)
   $porc = @(git status --porcelain)
   ""
