@@ -1,4 +1,3 @@
-. (Join-Path $PSScriptRoot 'lib\jp-gh-auth.ps1')
 
 # JP Engine - One-button publish workflow
 # Creates or updates a PR for the current work/* branch, watches checks, merges (squash + delete branch),
@@ -52,6 +51,7 @@ param(
 )
 
 Set-StrictMode -Version Latest
+. "$PSScriptRoot\lib\jp-gh-auth.ps1"
 . "$PSScriptRoot\lib\jp-assert.ps1"
 $ErrorActionPreference = 'Stop'
 
