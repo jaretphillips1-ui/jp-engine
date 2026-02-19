@@ -14,6 +14,7 @@ param(
 )
 
 Set-StrictMode -Version Latest
+. "$PSScriptRoot\lib\jp-assert.ps1"
 $ErrorActionPreference = 'Stop'
 
 function Fail([string]$m) { throw $m }
