@@ -29,6 +29,7 @@ param(
 )
 
 Set-StrictMode -Version Latest
+. "$PSScriptRoot\lib\jp-assert.ps1"
 $ErrorActionPreference = 'Stop'
 
 function Fail([string]$Message) { throw $Message }
@@ -62,13 +63,8 @@ function Assert-OnMaster {
   if ($b -ne 'master') { Fail ("JP guard: Post-merge cleanup must run on master. Current: " + $b) }
 }
 
-function Assert-CleanTree {
-  $s = (Git-Out @('status','--porcelain')).Trim()
-  if (-not [string]::IsNullOrWhiteSpace($s)) {
-    Write-Host $s
-    Fail "JP guard: Working tree must be clean for post-merge cleanup."
-  }
-}
+
+
 
 function Get-LocalMergedBranches {
   # Includes branches merged into current HEAD (master)
