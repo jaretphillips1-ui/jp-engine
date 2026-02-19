@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\lib\jp-assert.ps1"
 
 function Write-Section([string]$t) {
   Write-Host ""
@@ -12,12 +13,8 @@ function Write-Section([string]$t) {
   Write-Host ("-" * $t.Length) -ForegroundColor DarkGray
 }
 
-function Assert-RepoRoot {
-  $here = (Get-Location).Path
-  if (-not (Test-Path -LiteralPath (Join-Path $here '.git'))) {
-    throw "Gate failed: run from JP Engine repo root (folder that contains .git). PWD=$here"
-  }
-}
+
+
 
 function Try-Run([string]$label, [scriptblock]$sb) {
   try {
@@ -34,7 +31,7 @@ function Test-Cmd([string]$name) {
   return [bool](Get-Command $name -ErrorAction SilentlyContinue)
 }
 
-Assert-RepoRoot
+Assert-RepoRoot -RepoRoot 'C:\dev\JP_ENGINE\jp-engine' -SetLocation
 
 $repoRoot = (Get-Location).Path
 $docsToolchain = Join-Path $repoRoot 'docs\JP_TOOLCHAIN.md'
