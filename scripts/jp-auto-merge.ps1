@@ -11,15 +11,44 @@ param(
   [ValidateNotNullOrEmpty()]
   [string]$RepoPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path,
 
+  # Enable GitHub Auto-merge server-side (default: ON)
   [Parameter(Mandatory=$false)]
-  [switch]$SkipSmoke
+  [bool]$EnableAutoMerge = $true,
+
+  # Wait until merged (polls mergedAt). If not set, script can exit after enabling auto-merge.
+  [Parameter(Mandatory=$false)]
+  [switch]$WaitForMerge,
+
+  # Run local post-merge steps (sync master + smoke + tag green)
+  [Parameter(Mandatory=$false)]
+  [switch]$PostMerge,
+
+  # Open the PR in a browser once (confidence aid)
+  [Parameter(Mandatory=$false)]
+  [switch]$OpenWeb,
+
+  # Polling controls
+  [Parameter(Mandatory=$false)]
+  [ValidateRange(3,300)]
+  [int]$IntervalSeconds = 10,
+
+  [Parameter(Mandatory=$false)]
+  [ValidateRange(1,240)]
+  [int]$TimeoutMinutes = 30,
+
+  # Post-merge toggles
+  [Parameter(Mandatory=$false)]
+  [switch]$SkipSmoke,
+
+  [Parameter(Mandatory=$false)]
+  [switch]$SkipTagGreen
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 function Fail([string]$m){ throw $m }
 
-function Notify([string]$title, [string]$msg, [string]$kind = 'Info'){
+function Notify([string]$title, [string]$msg){
   try {
     if (Get-Module -ListAvailable -Name BurntToast) {
       Import-Module BurntToast -ErrorAction SilentlyContinue | Out-Null
@@ -29,9 +58,17 @@ function Notify([string]$title, [string]$msg, [string]$kind = 'Info'){
     }
   } catch {}
 
-  # Audible fallback
-  try { [console]::beep(900,200) } catch {}
-  try { [console]::beep(700,200) } catch {}
+  try { [console]::Beep(900,200) } catch {}
+  try { [console]::Beep(700,200) } catch {}
+}
+
+function Get-PrInfo {
+  param([string]$PrUrl,[string]$Repo)
+
+  # IMPORTANT: GitHub CLI does NOT support json field "merged".
+  # We use mergedAt (non-null => merged), plus state as a safety check.
+  $json = gh pr view $PrUrl --repo $Repo --json state,mergedAt,mergeStateStatus,autoMergeRequest,title,url,headRefName,baseRefName
+  return ($json | ConvertFrom-Json)
 }
 
 Set-Location -LiteralPath $RepoPath
@@ -43,67 +80,116 @@ Write-Host "Repo:     $Repo"
 Write-Host "PR:       $PrUrl"
 Write-Host ""
 
-# Gate: working tree must be clean before we start doing destructive operations
-if (@(git status --porcelain).Count -ne 0) {
-  Notify "JP AUTO MERGE (BLOCKED)" "Working tree not clean. Fix/stash and rerun." "Error"
-  Fail "Working tree not clean. STOP."
+if ($OpenWeb) {
+  try { Start-Process $PrUrl | Out-Null } catch {}
 }
 
-# 1) Watch checks — if anything fails, STOP (no merge)
-Write-Host "=== CHECKS (watch) ==="
-$checksOut = $null
-try {
-  gh pr checks $PrUrl --repo $Repo --watch --interval 10
-} catch {
-  Notify "JP AUTO MERGE (FAILED)" "Checks command failed. No merge performed." "Error"
-  throw
-}
-
-# 2) Merge (squash + delete branch) — only after checks succeed
-Write-Host ""
-Write-Host "=== MERGE (squash + delete branch) ==="
-try {
-  gh pr merge $PrUrl --repo $Repo --squash --delete-branch
-} catch {
-  Notify "JP AUTO MERGE (FAILED)" "Merge failed. No further steps run." "Error"
-  throw
-}
-
-# 3) Sync master locally
-Write-Host ""
-Write-Host "=== SYNC MASTER ==="
-git checkout master | Out-Null
-git pull | Out-Null
-if (@(git status --porcelain).Count -ne 0) {
-  Notify "JP AUTO MERGE (FAILED)" "Master not clean after pull. STOP." "Error"
-  Fail "Master not clean after pull (unexpected)."
-}
-
-# 4) Smoke
-if (-not $SkipSmoke) {
-  Write-Host ""
-  Write-Host "=== SMOKE ==="
-  pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoPath 'scripts\jp-smoke.ps1')
-  if ($LASTEXITCODE -ne 0) {
-    Notify "JP AUTO MERGE (FAILED)" "Smoke failed after merge. Investigate." "Error"
-    Fail "Smoke failed (exit $LASTEXITCODE)."
+# 1) Enable GitHub auto-merge (server-side). This does NOT require a clean local repo.
+if ($EnableAutoMerge) {
+  Write-Host "=== ENABLE AUTO-MERGE (server-side) ==="
+  try {
+    gh pr merge $PrUrl --repo $Repo --auto --squash --delete-branch | Out-Host
+    Write-Host "Auto-merge requested (GitHub will merge when green)."
+  } catch {
+    Write-Host "Note: auto-merge command errored (often means already enabled or already merged). Continuing..."
   }
 }
 
-# 5) Tag green baseline (runs smoke again if that script does so)
-Write-Host ""
-Write-Host "=== TAG GREEN (new baseline) ==="
-pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoPath 'scripts\jp-tag-green.ps1') -RunSmoke
-if ($LASTEXITCODE -ne 0) {
-  Notify "JP AUTO MERGE (FAILED)" "jp-tag-green failed after merge. Investigate." "Error"
-  Fail "jp-tag-green failed (exit $LASTEXITCODE)."
+# 2) Optional wait loop (uses mergedAt)
+if ($WaitForMerge) {
+  Write-Host ""
+  Write-Host "=== WAIT FOR MERGE ==="
+  $start = Get-Date
+
+  while ($true) {
+    $state = ''
+    $mergedAt = $null
+    $mergeStateStatus = ''
+    $auto = $null
+
+    try {
+      $o = Get-PrInfo -PrUrl $PrUrl -Repo $Repo
+      $state = [string]$o.state
+      $mergedAt = $o.mergedAt
+      $mergeStateStatus = [string]$o.mergeStateStatus
+      $auto = $o.autoMergeRequest
+    } catch {
+      Write-Host "WARN: Could not query PR state yet. Retrying..."
+    }
+
+    if ($mergedAt) {
+      Write-Host "MergedAt: $mergedAt"
+      break
+    }
+
+    if ($state -eq 'CLOSED') {
+      Notify "JP AUTO-MERGE (STOP)" "PR is CLOSED but not merged. No local actions run."
+      Fail "PR is CLOSED but mergedAt is empty. STOP."
+    }
+
+    if (((Get-Date) - $start).TotalMinutes -ge $TimeoutMinutes) {
+      Notify "JP AUTO-MERGE (TIMEOUT)" "PR did not merge within $TimeoutMinutes minutes. Check GitHub."
+      Fail "Timeout waiting for merge."
+    }
+
+    $secs = [int]((Get-Date) - $start).TotalSeconds
+    $autoTxt = if ($auto) { 'AUTO=ON' } else { 'AUTO=OFF' }
+    Write-Host ("…waiting  state={0}  mergeStateStatus={1}  {2}  t={3}s" -f $state,$mergeStateStatus,$autoTxt,$secs)
+    Start-Sleep -Seconds $IntervalSeconds
+  }
+
+  Notify "JP AUTO-MERGE (MERGED)" "PR merged. Ready for optional local post-merge steps."
 }
 
-Write-Host ""
-Write-Host "=== DONE ==="
-git status -sb
-git log -1 --oneline --decorate
-$tags = git tag --list 'baseline/green-*' --sort=-creatordate | Select-Object -First 6
-$tags | ForEach-Object { $_ }
+# 3) Optional local post-merge steps (requires clean local repo)
+if ($PostMerge) {
+  Write-Host ""
+  Write-Host "=== POST-MERGE (local) ==="
 
-Notify "JP AUTO MERGE (DONE)" "Merged + synced master + smoke + tagged green." "Success"
+  if (@(git status --porcelain).Count -ne 0) {
+    git status -sb
+    git status --porcelain
+    Notify "JP POST-MERGE (BLOCKED)" "Working tree not clean. Fix/stash and rerun with -PostMerge."
+    Fail "Working tree not clean. STOP."
+  }
+
+  Write-Host ""
+  Write-Host "=== SYNC MASTER ==="
+  git checkout master | Out-Null
+  git pull | Out-Null
+  if (@(git status --porcelain).Count -ne 0) { Fail "Master not clean after pull (unexpected)." }
+
+  if (-not $SkipSmoke) {
+    Write-Host ""
+    Write-Host "=== SMOKE ==="
+    pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoPath 'scripts\jp-smoke.ps1')
+    if ($LASTEXITCODE -ne 0) {
+      Notify "JP POST-MERGE (FAILED)" "Smoke failed after merge. Investigate."
+      Fail "Smoke failed (exit $LASTEXITCODE)."
+    }
+  } else {
+    Write-Host ""
+    Write-Host "=== SMOKE (skipped) ==="
+  }
+
+  if (-not $SkipTagGreen) {
+    Write-Host ""
+    Write-Host "=== TAG GREEN ==="
+    pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoPath 'scripts\jp-tag-green.ps1') -RunSmoke
+    if ($LASTEXITCODE -ne 0) {
+      Notify "JP POST-MERGE (FAILED)" "jp-tag-green failed after merge. Investigate."
+      Fail "jp-tag-green failed (exit $LASTEXITCODE)."
+    }
+  } else {
+    Write-Host ""
+    Write-Host "=== TAG GREEN (skipped) ==="
+  }
+
+  Write-Host ""
+  Write-Host "=== DONE ==="
+  git status -sb
+  git log -1 --oneline --decorate
+  git tag --list 'baseline/green-*' --sort=-creatordate | Select-Object -First 6
+
+  Notify "JP DONE" "Post-merge complete (sync + smoke/tag as configured)."
+}
