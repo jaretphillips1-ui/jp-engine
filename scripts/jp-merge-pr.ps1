@@ -14,17 +14,11 @@ param(
 
 Set-StrictMode -Version Latest
 . "$PSScriptRoot\lib\jp-gh-auth.ps1"
-. "$PSScriptRoot\lib\jp-gh-auth.ps1"
+
 . "$PSScriptRoot\lib\jp-assert.ps1"
 $ErrorActionPreference = 'Stop'
 
 function Fail([string]$m) { throw $m }
-
-
-
-
-
-
 
 function Get-RequiredChecksSafe {
   param([int]$Pr, [string]$Repo)
