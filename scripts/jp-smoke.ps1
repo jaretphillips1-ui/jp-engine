@@ -38,7 +38,13 @@ function Require-RepoRoot {
 }
 
 function Write-Summary([string]$label) {
-  $b = (git branch --show-current).Trim()
+  $b = (git branch --show-current)
+if ([string]::IsNullOrWhiteSpace($b)) {
+  # CI can be detached HEAD; try a symbolic ref, else label it clearly.
+  $b = (git symbolic-ref --short -q HEAD 2>$null)
+}
+if ([string]::IsNullOrWhiteSpace($b)) { $b = 'DETACHED_HEAD' }
+$b = $b.Trim()
   $h = (git log -1 --oneline --decorate)
   $porc = @(git status --porcelain)
   ""
