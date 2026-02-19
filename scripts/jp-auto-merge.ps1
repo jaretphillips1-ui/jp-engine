@@ -84,15 +84,33 @@ if ($OpenWeb) {
   try { Start-Process $PrUrl | Out-Null } catch {}
 }
 
+$autoMergeRequested = $false
+
 # 1) Enable GitHub auto-merge (server-side). This does NOT require a clean local repo.
 if ($EnableAutoMerge) {
   Write-Host "=== ENABLE AUTO-MERGE (server-side) ==="
+  $out = @()
   try {
-    gh pr merge $PrUrl --repo $Repo --auto --squash --delete-branch | Out-Host
-    Write-Host "Auto-merge requested (GitHub will merge when green)."
+    $out = & gh pr merge $PrUrl --repo $Repo --auto --squash --delete-branch 2>&1
+    $out | Out-Host
   } catch {
-    Write-Host "Note: auto-merge command errored (often means already enabled or already merged). Continuing..."
+    # native commands usually don't throw; keep catch anyway
+    $_ | Out-Host
   }
+
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "Auto-merge requested (GitHub will merge when green)."
+    $autoMergeRequested = $true
+  } else {
+    Write-Host "NOTE: Auto-merge could not be enabled (will use fallback if -WaitForMerge)."
+    $autoMergeRequested = $false
+  }
+
+  # Double-check via PR fields (in case gh returned success but autoMergeRequest is already set)
+  try {
+    $chk = Get-PrInfo -PrUrl $PrUrl -Repo $Repo
+    if ($chk.autoMergeRequest) { $autoMergeRequested = $true }
+  } catch {}
 }
 
 # If we are NOT waiting, we're not acting as a watcher. Safe to close this window after requesting auto-merge.
@@ -111,6 +129,24 @@ if ($WaitForMerge) {
 
   $start = Get-Date
   $lastReminder = Get-Date
+
+  # SMART FALLBACK (only in watcher mode):
+  # If auto-merge couldn't be enabled, we watch checks then merge manually via gh.
+  if ($EnableAutoMerge -and (-not $autoMergeRequested)) {
+    Write-Host ""
+    Write-Host "=== SMART FALLBACK: WATCH CHECKS + MERGE (auto-merge unavailable) ===" -ForegroundColor Yellow
+    & gh pr checks $PrUrl --repo $Repo --watch --interval $IntervalSeconds | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+      Notify "JP AUTO-MERGE (STOP)" "Checks watch failed. Not merging."
+      Fail "gh pr checks failed (exit $LASTEXITCODE). STOP."
+    }
+
+    & gh pr merge $PrUrl --repo $Repo --squash --delete-branch 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+      Notify "JP AUTO-MERGE (STOP)" "Fallback merge failed. Check PR/branch protections."
+      Fail "Fallback merge failed (exit $LASTEXITCODE). STOP."
+    }
+  }
 
   while ($true) {
     $state = ''
