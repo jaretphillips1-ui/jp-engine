@@ -8,7 +8,6 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Dot-source libs AFTER strict mode.
 . "$PSScriptRoot\lib\jp-log.ps1"
 . "$PSScriptRoot\lib\jp-exit.ps1"
 
@@ -23,30 +22,11 @@ function Get-JPVersionLine {
     try {
       Push-Location -LiteralPath $root
       $sha = (git rev-parse --short HEAD).Trim()
-    } catch {
-      $sha = ""
-    } finally {
-      if ($root) { Pop-Location }
-    }
+    } catch { $sha = "" }
+    finally { Pop-Location }
   }
   if (-not $sha) { $sha = "unknown" }
   "jp-engine {0}" -f $sha
-}
-
-function Show-Help {
-  @"
-JP Engine CLI (skeleton)
-
-Usage:
-  pwsh -File .\scripts\jp.ps1 --version
-  pwsh -File .\scripts\jp.ps1 doctor
-  pwsh -File .\scripts\jp.ps1 verify
-  pwsh -File .\scripts\jp.ps1 help
-
-Notes:
-- doctor: runs scripts\jp-doctor.ps1 if present
-- verify: runs scripts\jp-verify.ps1 (required)
-"@ | Write-Host
 }
 
 function Run-Verify {
@@ -68,27 +48,49 @@ function Run-Doctor {
   }
 }
 
+function Show-Help {
+  param($Registry)
+
+  Write-Host "JP Engine CLI (registry)"
+  Write-Host ""
+  Write-Host "Usage:"
+  Write-Host "  pwsh -File .\scripts\jp.ps1 <command>"
+  Write-Host ""
+  Write-Host "Commands:"
+  foreach ($k in ($Registry.Keys | Sort-Object)) {
+    Write-Host ("  {0,-10} {1}" -f $k, $Registry[$k].Description)
+  }
+}
+
 JP-Banner -Title "JP ENGINE — CLI"
 
-if ($Help -or $Command -eq 'help') {
-  Show-Help
-  JP-Exit -Code 0
-}
-
-if ($Version -or $Command -eq '--version' -or $Command -eq 'version') {
-  Write-Host (Get-JPVersionLine)
-  JP-Exit -Code 0
-}
-
-switch ($Command) {
-  '' {
-    Show-Help
-    JP-Exit -Code 2 -Message "No command provided."
+$Commands = @{
+  verify = @{
+    Description = "Run jp-verify"
+    Action = { Run-Verify }
   }
-  'verify' { Run-Verify; JP-Exit -Code 0 }
-  'doctor' { Run-Doctor; JP-Exit -Code 0 }
-  default  {
-    Show-Help
-    JP-Exit -Code 2 -Message ("Unknown command: {0}" -f $Command)
+  doctor = @{
+    Description = "Run jp-doctor (optional)"
+    Action = { Run-Doctor }
+  }
+  version = @{
+    Description = "Show version"
+    Action = { Write-Host (Get-JPVersionLine) }
+  }
+  help = @{
+    Description = "Show help"
+    Action = { param($r) Show-Help -Registry $r }
   }
 }
+
+if ($Version) { $Command = "version" }
+if ($Help)    { $Command = "help" }
+if (-not $Command) { $Command = "help" }
+
+if (-not $Commands.ContainsKey($Command)) {
+  Show-Help -Registry $Commands
+  JP-Exit -Code 2 -Message ("Unknown command: {0}" -f $Command)
+}
+
+& $Commands[$Command].Action
+JP-Exit -Code 0
