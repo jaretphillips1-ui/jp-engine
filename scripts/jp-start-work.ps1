@@ -2,14 +2,14 @@
 # Creates a new work/* branch, pushes it, and optionally runs verify/doctor.
 #
 # Examples:
-#   pwsh -NoProfile -File scripts/jp-start-work.ps1 -Slug auto-merge-tweaks
-#   pwsh -NoProfile -File scripts/jp-start-work.ps1 -Slug cleanup -SkipChecks
-#   pwsh -NoProfile -File scripts/jp-start-work.ps1 -Slug feature-x -AutoStash
-#   pwsh -NoProfile -File scripts/jp-start-work.ps1 -Slug feature-x -DryRun
+#   pwsh -NoProfile -File scripts/jp-start-work.ps1 -Slug auto-merge-tweaks -DryRun
+#   pwsh -NoProfile -File scripts/jp-start-work.ps1 -Slug cleanup -Live -SkipChecks
+#   pwsh -NoProfile -File scripts/jp-start-work.ps1 -Slug feature-x -Live -AutoStash
 #
 # Notes:
 # - Refuses unless starting from master
 # - Refuses if working tree dirty (unless -AutoStash)
+# - You MUST explicitly choose -DryRun (alias -WhatIf) OR -Live
 # - DryRun prints intended actions and NEVER creates/changes branches, stashes, or runs verify/doctor
 
 param(
@@ -28,7 +28,11 @@ param(
   # Non-mutating preview mode (safe). Alias "WhatIf" for convenience.
   [Parameter(Mandatory=$false)]
   [Alias('WhatIf')]
-  [switch]$DryRun
+  [switch]$DryRun,
+
+  # Explicit opt-in for live mutations (branch creation / push / etc).
+  [Parameter(Mandatory=$false)]
+  [switch]$Live
 )
 
 Set-StrictMode -Version Latest
@@ -92,6 +96,12 @@ function Run-IfExists([string]$File, [string]$Label, [switch]$Preview) {
 Assert-RepoRoot -Root $RepoRoot
 Assert-OnMaster
 
+# Require explicit mode selection
+if ($DryRun -and $Live) { throw "Refusing: choose exactly one mode: -DryRun OR -Live (not both)." }
+if (-not $DryRun -and -not $Live) { throw "Refusing: you must specify -DryRun (alias -WhatIf) OR -Live." }
+
+$preview = $DryRun
+
 $slugSafe = Sanitize-Slug -S $Slug
 $stamp = (Get-Date).ToString('yyyyMMdd-HHmm')
 $newBranch = "work/$stamp-$slugSafe"
@@ -100,14 +110,14 @@ Write-Section "== Summary =="
 Write-Host "RepoRoot: $RepoRoot" -ForegroundColor Cyan
 Write-Host "Branch (current): master" -ForegroundColor Cyan
 Write-Host "New branch: $newBranch" -ForegroundColor Cyan
-Write-Host ("Mode: " + ($(if ($DryRun) { "DRYRUN" } else { "LIVE" }))) -ForegroundColor Cyan
+Write-Host ("Mode: " + ($(if ($preview) { "DRYRUN" } else { "LIVE" }))) -ForegroundColor Cyan
 
 # Cleanliness logic:
 # - LIVE: require clean unless -AutoStash, and if -AutoStash, actually stash only if needed.
 # - DRYRUN: NEVER stash; just report what would happen.
 $dirtyCount = Assert-CleanOrExplain -AllowDirty:$AutoStash
 if ($dirtyCount -ne 0) {
-  if ($DryRun) {
+  if ($preview) {
     if ($AutoStash) {
       Write-Host "DRYRUN: working tree is dirty ($dirtyCount entries); would git stash push -u" -ForegroundColor Cyan
     } else {
@@ -122,9 +132,8 @@ if ($dirtyCount -ne 0) {
   }
 }
 
-# In DRYRUN, do not mutate anything. In LIVE, perform the minimal safe steps.
 Write-Section "== Sync master (ff-only) =="
-if ($DryRun) {
+if ($preview) {
   Write-Host "DRYRUN: git fetch origin --prune" -ForegroundColor Cyan
   Write-Host "DRYRUN: git checkout master" -ForegroundColor Cyan
   Write-Host "DRYRUN: git pull --ff-only origin master" -ForegroundColor Cyan
@@ -140,7 +149,7 @@ if ($DryRun) {
 }
 
 Write-Section "== Create + push work branch =="
-if ($DryRun) {
+if ($preview) {
   Write-Host "DRYRUN: git checkout -b $newBranch" -ForegroundColor Cyan
   Write-Host "DRYRUN: git push -u origin $newBranch" -ForegroundColor Cyan
 } else {
@@ -154,14 +163,14 @@ if ($DryRun) {
 if (-not $SkipChecks) {
   $verify = Join-Path $RepoRoot 'scripts\jp-verify.ps1'
   $doctor = Join-Path $RepoRoot 'scripts\jp-doctor.ps1'
-  Run-IfExists -File $verify -Label 'Run jp-verify' -Preview:$DryRun
-  Run-IfExists -File $doctor -Label 'Run jp-doctor' -Preview:$DryRun
+  Run-IfExists -File $verify -Label 'Run jp-verify' -Preview:$preview
+  Run-IfExists -File $doctor -Label 'Run jp-doctor' -Preview:$preview
 } else {
   Write-Host "SkipChecks: true (not running verify/doctor)" -ForegroundColor Yellow
 }
 
 Write-Section "== Status =="
-if ($DryRun) {
+if ($preview) {
   Write-Host "DRYRUN: done (no mutations performed)." -ForegroundColor Green
 } else {
   git status | Out-Host
