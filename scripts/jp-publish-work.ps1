@@ -1,86 +1,72 @@
 param(
   [Parameter(Mandatory=$false)]
-  [string]$Title = '',
+  [ValidateNotNullOrEmpty()]
+  [string]$Repo = 'jaretphillips1-ui/jp-engine',
 
   [Parameter(Mandatory=$false)]
-  [string]$Body  = '',
-
-  [Parameter(Mandatory=$false)]
-  [switch]$SkipChecks
+  [switch]$SkipSmoke
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-function Fail([string]$m) { throw $m }
+function Fail([string]$m){ throw $m }
 
-$repoRoot = (git rev-parse --show-toplevel 2>$null)
-if ([string]::IsNullOrWhiteSpace($repoRoot)) { Fail "Not inside a git repo." }
-Set-Location -LiteralPath $repoRoot
+$repoPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+Set-Location -LiteralPath $repoPath
 
-$branch = (git branch --show-current 2>$null)
-if ([string]::IsNullOrWhiteSpace($branch)) { Fail "Could not detect current branch (detached HEAD). Refusing publish." }
-$branch = $branch.Trim()
-if ($branch -eq 'master') { Fail "Refusing publish from master. Use a work/* branch." }
+if (-not (Test-Path -LiteralPath (Join-Path $repoPath '.git'))) { Fail "Not a git repo: $repoPath" }
 
-# Default title/body if not provided
-if ([string]::IsNullOrWhiteSpace($Title)) {
-  $Title = (git log -1 --pretty=%s).Trim()
-  if ([string]::IsNullOrWhiteSpace($Title)) { $Title = "JP: update ($branch)" }
-}
-if ([string]::IsNullOrWhiteSpace($Body)) {
-  $Body = @"
-## What
-Describe what changed.
+$branch = (git branch --show-current).Trim()
+if ($branch -notlike 'work/*') { Fail "Publish must run on a work/* branch. Current: '$branch'." }
 
-## Why
-Describe why it matters.
+if (@(git status --porcelain).Count -ne 0) { Fail "Working tree not clean. Commit/stash first." }
 
-## How
-- Key steps / logic
-
-## Notes
-(Any follow-ups.)
-"@
+# Hard-stop empty PR condition
+if (@(git log --oneline master..HEAD).Count -eq 0) {
+  Fail "No commits between master and $branch. STOP (empty PR)."
 }
 
-# Create PR (or locate existing) and ensure title/body set via gh
-$prUrl = $null
+# Create PR if missing; otherwise reuse existing
+$prUrl = ''
 try {
-  $prUrl = gh pr create --base master --head $branch --title $Title --body $Body
-} catch {
-  # If PR exists, gh will error; we locate it and continue.
+  $prUrl = (gh pr view --repo $Repo $branch --json url --jq .url 2>$null)
+} catch {}
+
+if ([string]::IsNullOrWhiteSpace($prUrl)) {
+  $title = "work: $branch"
+  $body  = "Automated publish from $branch.
+
+- Hard-stops empty PRs
+- Watches checks
+- Squash merges + deletes branch
+- Syncs master + smoke + tags baseline green"
+  $prUrl = (gh pr create --repo $Repo --base master --head $branch --title $title --body $body)
+  if ([string]::IsNullOrWhiteSpace($prUrl)) { Fail "PR creation did not return a URL." }
 }
 
-if (-not $prUrl) {
-  $prUrl = gh pr view --json url --jq .url
-}
-if ([string]::IsNullOrWhiteSpace($prUrl)) { Fail "Could not determine PR URL for branch '$branch'." }
+Write-Host "PR: $prUrl"
 
-gh pr edit $prUrl --title $Title --body $Body | Out-Null
+Write-Host "Watching checks..."
+gh pr checks $prUrl --repo $Repo --watch --interval 10
 
-"=== JP: PR ==="
-$prUrl
-""
+Write-Host "Merging (squash + delete branch)..."
+gh pr merge $prUrl --repo $Repo --squash --delete-branch
 
-if (-not $SkipChecks) {
-  "=== JP: WATCH CHECKS ==="
-  gh pr checks $prUrl --watch
-  ""
-}
-
-"=== JP: MERGE (SQUASH + DELETE BRANCH) ==="
-gh pr merge $prUrl --squash --delete-branch
-""
-
-"=== JP: SYNC MASTER (LOCAL) ==="
+Write-Host "Syncing master..."
 git checkout master | Out-Null
 git pull | Out-Null
-""
+if (@(git status --porcelain).Count -ne 0) { Fail "Master not clean after pull (unexpected)." }
 
-"=== JP: LOCAL BRANCH CLEANUP ==="
-git branch -D $branch 2>$null | Out-Null
-""
+if (-not $SkipSmoke) {
+  Write-Host "Smoke..."
+  pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoPath 'scripts\jp-smoke.ps1')
+  if ($LASTEXITCODE -ne 0) { Fail "Smoke failed (exit $LASTEXITCODE)." }
+}
 
-"=== JP: DONE ==="
-git status --porcelain
+Write-Host "Tag green baseline..."
+pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoPath 'scripts\jp-tag-green.ps1') -RunSmoke
+if ($LASTEXITCODE -ne 0) { Fail "jp-tag-green failed (exit $LASTEXITCODE)." }
+
+Write-Host "DONE"
+git status -sb
 git log -1 --oneline --decorate
