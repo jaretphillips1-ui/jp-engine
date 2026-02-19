@@ -36,6 +36,7 @@ param(
 )
 
 Set-StrictMode -Version Latest
+. "$PSScriptRoot\lib\jp-assert.ps1"
 $ErrorActionPreference = 'Stop'
 
 function Write-Section([string]$Text) {
@@ -43,12 +44,8 @@ function Write-Section([string]$Text) {
   Write-Host $Text -ForegroundColor Cyan
 }
 
-function Assert-RepoRoot([string]$Root) {
-  if (-not (Test-Path -LiteralPath $Root)) { throw "Repo root not found: $Root" }
-  Set-Location -LiteralPath $Root
-  $top = (git rev-parse --show-toplevel).Trim()
-  if (-not $top) { throw "Not a git repo (rev-parse failed)." }
-}
+
+
 
 function Assert-OnMaster() {
   $current = (git branch --show-current).Trim()
