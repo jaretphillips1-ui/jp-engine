@@ -1,4 +1,6 @@
 param(
+  [switch]$ShowAuthStatus,
+
   [Parameter(Mandatory=$true)]
   [int] $PrNumber,
 
@@ -114,8 +116,11 @@ function Get-HeadRef {
 
 Assert-RepoRoot
 Assert-CleanTree
-gh auth status | Out-Null
-
+  if ($ShowAuthStatus) {
+    gh auth status -h github.com
+  } else {
+    & gh auth status -h github.com 1>$null 2>$null
+  }
 "=== JP: MERGE PR #$PrNumber ==="
 Assert-ChecksGreen -Pr $PrNumber -Repo $Repo
 Assert-Mergeable  -Pr $PrNumber -Repo $Repo
