@@ -62,7 +62,8 @@ function Assert-ChecksGreen {
 
   "No required checks reported; falling back to statusCheckRollup."
 
-  $rollup = Get-StatusRollup -Pr $Pr -Repo $Repo
+  $rollupRaw = Get-StatusRollup -Pr $Pr -Repo $Repo
+  $rollup = @($rollupRaw | ForEach-Object { $_ })
   if ($rollup.Count -eq 0) { Fail "No checks found in statusCheckRollup; refusing to merge." }
 
   function Get-CheckState([object]$c) {
