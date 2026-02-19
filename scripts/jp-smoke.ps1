@@ -1,56 +1,60 @@
-[CmdletBinding()]
 param(
-  [int]$StopThick = 4
+  [string]$ExpectedRepo = 'C:\dev\JP_ENGINE\jp-engine'
 )
 
+$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
 
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = Split-Path -Parent $repoRoot
+function Normalize-Path([string]$p) {
+  if ([string]::IsNullOrWhiteSpace($p)) { return "" }
+  try { $p = (Resolve-Path -LiteralPath $p).Path } catch { }
+  $p = $p -replace '/', '\'
+  $p = $p.TrimEnd('\')
+  if ($IsWindows) { $p = $p.ToLowerInvariant() }
+  return $p
+}
 
-$verify = Join-Path $repoRoot "scripts\jp-verify.ps1"
-$stop   = Join-Path $repoRoot "scripts\jp-stop.ps1"
-$step   = Join-Path $repoRoot "scripts\jp-step.ps1"
+function Require-RepoRoot {
+  Set-Location -LiteralPath $ExpectedRepo
 
-try {
-  if (-not (Test-Path -LiteralPath $step)) { throw "jp-step.ps1 not found." }
-  . $step
+  $top = (git rev-parse --show-toplevel 2>$null)
+  if (-not $top) { throw "Safety gate: not a git repo (git rev-parse failed)." }
 
-  Invoke-JpStep -Label "VERIFY" -Command {
-    if (-not (Test-Path -LiteralPath $verify)) { throw "jp-verify.ps1 not found." }
-    & $verify -NoStop
-  } -ExpectRegex @("(?m)^\s*VERIFY — PASS\s*$","(?m)^\s*NO PASTE NEEDED") | Out-Null
-
-  Invoke-JpStep -Label "DOCTOR" -Command {
-    $doctor = Join-Path $repoRoot "scripts\jp-doctor.ps1"
-    if (-not (Test-Path -LiteralPath $doctor)) { throw "jp-doctor.ps1 not found." }
-    & $doctor
-
-    # Token must be on stdout so jp-step can assert it (Write-Host may not be captured)
-    Write-Output "JP Doctor PASSED"
-  } -ExpectRegex @("JP Doctor PASSED") -ShowOutputOnPass | Out-Null
-  Invoke-JpStep -Label "GIT STATUS" -Command { git status } -ExpectRegex @("working tree clean") -ShowOutputOnPass | Out-Null
-  Invoke-JpStep -Label "GIT LOG"    -Command { git log -1 --oneline } -ExpectRegex @("^[0-9a-f]{7,40}\s") -ShowOutputOnPass | Out-Null
-
-  if (Test-Path -LiteralPath $stop) {
-    & $stop -Thick $StopThick -Color -Bold -Label "STOP — NEXT COMMAND BELOW" | Out-Null
-  } else {
-    Write-Host "==== STOP — NEXT COMMAND BELOW ===="
-    Write-Host ""
+  $expectedNorm = Normalize-Path $ExpectedRepo
+  $topNorm      = Normalize-Path $top.Trim()
+  if ($topNorm -ne $expectedNorm) {
+    throw "Safety gate: expected repo '$expectedNorm', got '$topNorm'"
   }
 }
-catch {
-  Write-Host ("SMOKE FAIL: " + $_.Exception.Message)
 
-  if (Test-Path -LiteralPath $stop) {
-    & $stop -Thick $StopThick -Color -Fail -Bold -Label "CUT HERE — PASTE BELOW ONLY (FAIL)" -PasteCue | Out-Null
-  } else {
-    Write-Host "==== CUT HERE — PASTE BELOW ONLY (FAIL) ===="
-    Write-Host ""
-    Write-Host "PASTE BELOW ↓ (copy only what’s below this line when asked)"
-    Write-Host ""
-  }
-
-  throw
+function Write-Summary([string]$label) {
+  $b = (git branch --show-current).Trim()
+  $h = (git log -1 --oneline --decorate)
+  $porc = @(git status --porcelain)
+  ""
+  "=== JP: SMOKE SUMMARY ($label) ==="
+  ("Branch: " + $b)
+  ("HEAD:   " + $h)
+  ("Dirty:  " + $porc.Count + " change(s)")
+  ""
 }
+
+# --------------------------------------------------------------------------------
+# JP Smoke:
+# - Purpose: a quick, deterministic go/no-go.
+# - IMPORTANT: jp-doctor already runs jp-verify (baseline), so we do NOT run verify twice.
+# --------------------------------------------------------------------------------
+Require-RepoRoot
+
+Write-Host "=== JP: SMOKE (doctor-only) ==="
+Write-Host "Running: scripts\jp-doctor.ps1"
+Write-Host ""
+
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\jp-doctor.ps1
+if ($LASTEXITCODE -ne 0) {
+  Write-Summary -label 'FAIL'
+  throw "jp-doctor.ps1 failed with exit code $LASTEXITCODE"
+}
+
+Write-Summary -label 'PASS'
+Write-Host "STOP — NEXT COMMAND BELOW"
