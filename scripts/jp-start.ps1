@@ -1,15 +1,17 @@
+param()
+
 ### SELF_GATE_INSTALLED_JP ###
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Snap to repo root based on this script's location (prevents wrong-PWD drift)
-$scriptDir = Split-Path -Parent $( $(Get-Item -LiteralPath $MyInvocation.MyCommand.Path).FullName )
-$repoRoot  = Resolve-Path -LiteralPath (Join-Path $scriptDir '..')
-Set-Location -LiteralPath $repoRoot
+# Self-gate to repo root based on THIS file's location (prevents wrong-PWD drift)
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptDir  = Split-Path -Parent $scriptPath
+$repoRoot0  = Resolve-Path -LiteralPath (Join-Path $scriptDir '..')
+Set-Location -LiteralPath $repoRoot0
 
 # Ensure we're really in the expected git repo
 git rev-parse --is-inside-work-tree | Out-Null
-param()
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
