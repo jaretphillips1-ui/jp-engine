@@ -32,43 +32,6 @@ function Get-RepoSlug {
 
   throw ("Unrecognized origin URL format: {0}" -f $u)
 }
-function Try-GhJson([string[]]$args){
-  try {
-    # Ensure gh targets the correct repo (owner/name) deterministically
-    $useArgs = $args
-    if ((-not ($useArgs -contains '--repo')) -and $script:RepoSlug) {
-      $useArgs = @($useArgs + @('--repo', $script:RepoSlug))
-    }
-
-    # Capture stdout (PowerShell may return string[]); ignore stderr noise
-    $raw = & gh @useArgs 2>$null
-    if ($LASTEXITCODE -ne 0) { return $null }
-    if ($null -eq $raw) { return $null }
-
-    # Normalize to a single string
-    $s = ($raw -join "`n").Trim()
-    if (-not $s) { return $null }
-
-    # If anything non-JSON sneaks into stdout, extract the JSON object/array
-    $json = $s
-    $iObj = $s.IndexOf('{')
-    $iArr = $s.IndexOf('[')
-    if ($iObj -ge 0 -or $iArr -ge 0) {
-      $startIx = if ($iObj -ge 0 -and $iArr -ge 0) { [Math]::Min($iObj,$iArr) } elseif ($iObj -ge 0) { $iObj } else { $iArr }
-      $endObj = $s.LastIndexOf('}')
-      $endArr = $s.LastIndexOf(']')
-      $endIx = [Math]::Max($endObj,$endArr)
-      if ($endIx -gt $startIx) {
-        $json = $s.Substring($startIx, ($endIx - $startIx + 1))
-      }
-    }
-
-    return ($json | ConvertFrom-Json)
-  } catch {
-    return $null
-  }
-}
-
 if (-not (Test-Path ".git")) { Die "Not in repo root." }
 
 Require-Tool git
