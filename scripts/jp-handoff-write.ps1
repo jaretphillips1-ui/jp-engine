@@ -1,38 +1,139 @@
 [CmdletBinding()]
 param(
-  [string]$HandoffPath = "docs/JP_ENGINE_HANDOFF.md"
+  [string]$HandoffPath = "docs/JP_ENGINE_HANDOFF.md",
+  [string]$SaveRoot = "C:\Users\lsphi\OneDrive\AI_Workspace\_SAVES\JP_ENGINE\LATEST"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path ".git")) { throw "Not in repo root." }
+function Die([string]$m){ throw $m }
+
+function Require-Tool([string]$name){
+  $cmd = Get-Command $name -ErrorAction SilentlyContinue
+  if (-not $cmd) { Die "Missing required tool: $name" }
+}
+
+function Try-GhJson([string[]]$args){
+  # Returns deserialized JSON (or $null if gh fails)
+  try {
+    $raw = & gh @args 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    if (-not $raw) { return $null }
+    return ($raw | ConvertFrom-Json)
+  } catch {
+    return $null
+  }
+}
+
+if (-not (Test-Path ".git")) { Die "Not in repo root." }
+
+Require-Tool git
+Require-Tool gh
 
 $branch = (git rev-parse --abbrev-ref HEAD).Trim()
 $commit = (git rev-parse --short HEAD).Trim()
 $msg    = (git log -1 --pretty=%s).Trim()
 $stamp  = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
-# NOTE: Release/asset discovery via gh --json is Phase 2 (no guessing here yet)
-$body = @"
-# JP Engine Handoff
+# --- Latest Release (via gh --json) ---
+# Get most recent release tag (non-draft). Use list so we don't guess tag names.
+$relList = Try-GhJson @("release","list","--limit","1","--exclude-drafts","--json","tagName,createdAt,publishedAt")
+$tag = $null
+if ($relList -and $relList.Count -ge 1) {
+  $tag = $relList[0].tagName
+}
 
-Generated: $stamp
+$rel = $null
+if ($tag) {
+  $rel = Try-GhJson @("release","view",$tag,"--json","tagName,name,url,isDraft,isPrerelease,createdAt,publishedAt,author,assets")
+}
 
-## Repo State
-- Branch: $branch
-- Commit: $commit
-- Message: $msg
+# --- Local artifacts snapshot ---
+$local = @{
+  saveRoot = $SaveRoot
+  exists   = $false
+  latestZip = $null
+  timedZip  = $null
+  shaFile   = $null
+  checkpoint = $null
+  files = @()
+}
 
-## Release / Backups
-- (Phase 2) Populate from GitHub Release via gh --json
-- (Phase 2) Populate local artifacts + SHA summary
+if (Test-Path -LiteralPath $SaveRoot) {
+  $local.exists = $true
+  $files = Get-ChildItem -LiteralPath $SaveRoot -File -ErrorAction Stop |
+    Sort-Object LastWriteTime -Descending
 
-## Work Context
-- What I was doing:
-- What’s next:
-- Housekeeping:
-"@
+  $local.files = @(
+    $files | Select-Object Name,Length,LastWriteTime
+  )
 
-$body | Set-Content -LiteralPath $HandoffPath -Encoding utf8
+  # heuristic: prefer LATEST.zip for latestZip; any JP_ENGINE_*.zip for timedZip (most recent)
+  $latest = $files | Where-Object Name -ieq "JP_ENGINE_LATEST.zip" | Select-Object -First 1
+  if ($latest) { $local.latestZip = $latest }
+
+  $timed = $files | Where-Object Name -match '^JP_ENGINE_\d{8}_\d{6}\.zip$' | Select-Object -First 1
+  if ($timed) { $local.timedZip = $timed }
+
+  $sha = $files | Where-Object Name -ieq "JP_ENGINE_ZIP_SHA256.txt" | Select-Object -First 1
+  if ($sha) { $local.shaFile = $sha }
+
+  $cp = $files | Where-Object Name -ieq "JP_ENGINE_LATEST_CHECKPOINT.txt" | Select-Object -First 1
+  if ($cp) { $local.checkpoint = $cp }
+}
+
+# --- Build markdown ---
+$md = New-Object System.Text.StringBuilder
+[void]$md.AppendLine("# JP Engine Handoff")
+[void]$md.AppendLine("")
+[void]$md.AppendLine("Generated: $stamp")
+[void]$md.AppendLine("")
+[void]$md.AppendLine("## Repo State")
+[void]$md.AppendLine("- Branch: $branch")
+[void]$md.AppendLine("- Commit: $commit")
+[void]$md.AppendLine("- Message: $msg")
+[void]$md.AppendLine("")
+
+[void]$md.AppendLine("## Latest GitHub Release")
+if (-not $rel) {
+  [void]$md.AppendLine("- (unavailable) Could not fetch latest release via gh.")
+} else {
+  [void]$md.AppendLine(("- Tag: {0}" -f $rel.tagName))
+  if ($rel.url)        { [void]$md.AppendLine(("- URL: {0}" -f $rel.url)) }
+  if ($rel.publishedAt){ [void]$md.AppendLine(("- Published: {0}" -f $rel.publishedAt)) }
+  [void]$md.AppendLine(("- Draft: {0}" -f $rel.isDraft))
+  [void]$md.AppendLine(("- Prerelease: {0}" -f $rel.isPrerelease))
+
+  if ($rel.assets -and $rel.assets.Count -gt 0) {
+    [void]$md.AppendLine("")
+    [void]$md.AppendLine("### Assets")
+    foreach ($a in $rel.assets) {
+      # size is bytes
+      $sz = $a.size
+      $nm = $a.name
+      [void]$md.AppendLine(("- {0} ({1} bytes)" -f $nm, $sz))
+    }
+  }
+}
+[void]$md.AppendLine("")
+
+[void]$md.AppendLine("## Local Save Artifacts")
+[void]$md.AppendLine(("- Save root: {0}" -f $SaveRoot))
+if (-not $local.exists) {
+  [void]$md.AppendLine("- Status: (missing) Save root not found.")
+} else {
+  if ($local.latestZip) { [void]$md.AppendLine(("- Latest ZIP: {0} ({1} bytes, {2})" -f $local.latestZip.Name, $local.latestZip.Length, $local.latestZip.LastWriteTime)) }
+  if ($local.timedZip)  { [void]$md.AppendLine(("- Timed ZIP: {0} ({1} bytes, {2})" -f $local.timedZip.Name, $local.timedZip.Length, $local.timedZip.LastWriteTime)) }
+  if ($local.shaFile)   { [void]$md.AppendLine(("- SHA file: {0} ({1} bytes, {2})" -f $local.shaFile.Name, $local.shaFile.Length, $local.shaFile.LastWriteTime)) }
+  if ($local.checkpoint){ [void]$md.AppendLine(("- Checkpoint: {0} ({1} bytes, {2})" -f $local.checkpoint.Name, $local.checkpoint.Length, $local.checkpoint.LastWriteTime)) }
+}
+[void]$md.AppendLine("")
+
+[void]$md.AppendLine("## Work Context")
+[void]$md.AppendLine("- What I was doing:")
+[void]$md.AppendLine("- What’s next:")
+[void]$md.AppendLine("- Housekeeping:")
+
+$md.ToString() | Set-Content -LiteralPath $HandoffPath -Encoding utf8
 Write-Host ("Handoff written -> {0}" -f $HandoffPath) -ForegroundColor Green
