@@ -100,5 +100,24 @@ if ($Version) { $Command = "version" }
 if ($Help)    { $Command = "help" }
 if (-not $Command) { $Command = "help" }
 
+
+# Fallback help if plugins failed to load (keeps CLI usable)
+if ($Commands.Count -eq 0) {
+  $Commands['help'] = @{
+    Description = "Show help (fallback)"
+    Action      = {
+      param($Registry)
+      Write-Host "JP Engine CLI"
+      Write-Host ""
+      Write-Host "Usage:"
+      Write-Host "  pwsh -File .\scripts\jp.ps1 <command>"
+      Write-Host ""
+      Write-Host "No commands loaded from scripts/commands."
+      Write-Host ""
+      Write-Host "Expected plugin files live in:"
+      Write-Host ("  {0}" -f (Join-Path $PSScriptRoot 'commands'))
+    }
+  }
+}
 Invoke-JPCommand -Name $Command -Registry $Commands
 JP-Exit -Code 0
