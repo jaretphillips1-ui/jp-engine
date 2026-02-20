@@ -55,10 +55,24 @@ try {
 # Warn (do not fail) only if you're in a non-canonical OneDrive location.
 # Canonical repo for this machine is allowed to live under OneDrive.
 $canonicalRepoRoot = 'C:\Users\lsphi\OneDrive\AI_Workspace\JP_ENGINE\jp-engine'
-if (($repoRoot -ne $canonicalRepoRoot) -and ($repoRoot -match '\\OneDrive\\' -or $repoRoot -match '/OneDrive/')) {
+
+function Normalize-Path([string]$p) {
+  if ([string]::IsNullOrWhiteSpace($p)) { return "" }
+  $p = $p -replace '/', '\'
+  try { $p = (Resolve-Path -LiteralPath $p).Path } catch { }
+  return $p.TrimEnd('\')
+}
+
+$nr = (Normalize-Path $repoRoot)
+$nc = (Normalize-Path $canonicalRepoRoot)
+
+if ((-not [string]::IsNullOrWhiteSpace($nr)) -and (-not [string]::IsNullOrWhiteSpace($nc)) -and
+    ($nr.ToLowerInvariant() -ne $nc.ToLowerInvariant()) -and
+    ($repoRoot -match '\\OneDrive\\' -or $repoRoot -match '/OneDrive/')) {
   Say "WARNING: repo path looks like OneDrive, but this is not the canonical JP Engine repo. Canonical repo: $canonicalRepoRoot"
-}Require-Cmd "git" "Install Git and ensure it's on PATH." | Out-Null
-  $branch = Try-Line { git rev-parse --abbrev-ref HEAD } ""
+}
+
+Require-Cmd "git" "Install Git and ensure it's on PATH." | Out-Null$branch = Try-Line { git rev-parse --abbrev-ref HEAD } ""
   if ($branch) { Say ("git branch: " + $branch) }
 
   BreakLine "VERIFY — TOOLS" -Thick 4
