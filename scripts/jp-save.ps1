@@ -1,123 +1,119 @@
-[CmdletBinding()]
 param(
-  [string]$SaveRoot = "C:\Users\lsphi\OneDrive\AI_Workspace\_SAVES\JP_ENGINE\LATEST",
-  [switch]$NoZip,
-  [switch]$NoVerify
+  [string]$Note = ""
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 
-function Say([string]$m) { Write-Host $m }
+function Say([string]$s) { Write-Host $s }
 
-# --- Resolve repo root robustly ---
-$repoRoot = ""
-try { $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim() } catch { }
-if (-not $repoRoot) { throw "jp-save: not inside a git repo. Run from within the repo (or ensure git is available)." }
+$repoRoot = 'C:\Users\lsphi\OneDrive\AI_Workspace\JP_ENGINE\jp-engine'
+if (-not (Test-Path -LiteralPath $repoRoot)) { throw "RepoRoot not found: $repoRoot" }
+Set-Location -LiteralPath $repoRoot
 
-# --- Preflight git info ---
-$branch = (git rev-parse --abbrev-ref HEAD).Trim()
-$head1  = (git log -1 --oneline).Trim()
+$saveRoot = 'C:\Users\lsphi\OneDrive\AI_Workspace\_SAVES\JP_ENGINE\LATEST'
+if (-not (Test-Path -LiteralPath $saveRoot)) { New-Item -ItemType Directory -Path $saveRoot | Out-Null }
 
-$commit = ""
-try { $commit = (git rev-parse HEAD 2>$null).Trim() } catch { }
-if (-not $commit) { $commit = "NO_COMMIT_YET" }
-
-$ts = Get-Date -Format "yyyyMMdd_HHmmss"
-New-Item -ItemType Directory -Force -Path $SaveRoot | Out-Null
-
-$baseName   = "JP_ENGINE_LATEST"
-$zipPath    = Join-Path $SaveRoot ($baseName + ".zip")
-$zipTsPath  = Join-Path $SaveRoot ("JP_ENGINE_" + $ts + ".zip")
-$markerPath = Join-Path $SaveRoot ($baseName + "_CHECKPOINT.txt")
-$shaPath    = Join-Path $SaveRoot "JP_ENGINE_ZIP_SHA256.txt"
-
-$status = (git status --porcelain) 2>$null
-$dirty  = if ($status) { "DIRTY" } else { "CLEAN" }
-
-# --- Optional verify (before save) ---
-if (-not $NoVerify) {
-  $verifyPath = Join-Path $repoRoot "scripts\jp-verify.ps1"
-  if (Test-Path -LiteralPath $verifyPath) {
-    Say "jp-save: running verify..."
-    & $verifyPath
-    Say "jp-save: verify PASS (or script completed)."
-  } else {
-    Say "jp-save: verify skipped (scripts\jp-verify.ps1 not found)."
-  }
-} else {
-  Say "jp-save: verify skipped (NoVerify)."
+$desktop = [Environment]::GetFolderPath('Desktop')
+if ([string]::IsNullOrWhiteSpace($desktop) -or -not (Test-Path -LiteralPath $desktop)) {
+  throw "Desktop path resolution failed."
 }
 
-# --- Write checkpoint marker (always) ---
-$marker = @"
+# 0) Require clean repo (professional rule: archive tracked state only)
+$porc = (git status --porcelain) 2>$null
+if ($porc) {
+  Say "ERROR: repo is not clean. Save requires clean working tree."
+  Say $porc
+  throw "Save aborted: dirty working tree."
+}
+
+# 1) Verify must PASS
+$verify = Join-Path $repoRoot 'scripts\jp-verify.ps1'
+if (-not (Test-Path -LiteralPath $verify)) { throw "Missing: $verify" }
+& $verify
+
+# 2) Snapshot identifiers
+$nowStamp = [DateTime]::Now.ToString('yyyyMMdd_HHmmss')
+$nowPretty = [DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss')
+$branch = ((git rev-parse --abbrev-ref HEAD) 2>$null).Trim()
+$commit = ((git rev-parse HEAD) 2>$null).Trim()
+
+if ([string]::IsNullOrWhiteSpace($commit)) { throw "Could not read git commit hash." }
+
+# 3) Build zips using git archive (tracked files only, reproducible)
+$latestZip = Join-Path $saveRoot 'JP_ENGINE_LATEST.zip'
+$timeZip   = Join-Path $saveRoot ("JP_ENGINE_" + $nowStamp + ".zip")
+
+# create timestamped zip
+& git archive --format=zip --output $timeZip HEAD 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $timeZip)) {
+  throw "git archive failed to produce $timeZip"
+}
+
+# refresh LATEST zip from timestamped
+Copy-Item -LiteralPath $timeZip -Destination $latestZip -Force
+
+# mirror to Desktop
+$desktopLatest = Join-Path $desktop 'JP_ENGINE_LATEST.zip'
+Copy-Item -LiteralPath $latestZip -Destination $desktopLatest -Force
+
+# 4) Write checkpoint + handoff
+$checkpointPath = Join-Path $saveRoot 'JP_ENGINE_LATEST_CHECKPOINT.txt'
+$handoffPath    = Join-Path $saveRoot ("JP_HANDOFF_" + $nowStamp + ".txt")
+
+$hashLatest = (Get-FileHash -LiteralPath $latestZip -Algorithm SHA256).Hash
+$hashDesk   = (Get-FileHash -LiteralPath $desktopLatest -Algorithm SHA256).Hash
+
+$checkpoint = @"
 JP ENGINE — SAVE CHECKPOINT
-Timestamp: $ts
-Repo: $repoRoot
-Branch: $branch
-Head: $head1
-Commit: $commit
-Git: $dirty
+time:   $nowPretty
+repo:   $repoRoot
+branch: $branch
+commit: $commit
+
+SAVE ROOT:
+$saveRoot
+
+ARTIFACTS:
+LATEST:      $latestZip
+TIMESTAMP:   $timeZip
+DESKTOP:     $desktopLatest
+
+SHA256:
+LATEST:  $hashLatest
+DESKTOP: $hashDesk
+
+NOTE:
+$Note
 "@
-$marker | Set-Content -Encoding UTF8 -NoNewline -LiteralPath $markerPath
 
-if ($NoZip) {
-  Say "jp-save wrote checkpoint marker (NoZip requested)."
-  Say "Marker: $markerPath"
-  exit 0
-}
+$handoff = @"
+JP ENGINE — HANDOFF
+time:   $nowPretty
+branch: $branch
+commit: $commit
 
-# --- Stage to temp (exclude .git + common heavy dirs) ---
-$tmp = Join-Path $env:TEMP ("jp_engine_pack_" + $ts)
-if (Test-Path -LiteralPath $tmp) { Remove-Item -Recurse -Force -LiteralPath $tmp }
-New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+What changed:
+- (fill this in)
 
-$exclude = @(
-  ".git",
-  ".next",
-  "node_modules",
-  ".venv",
-  "__pycache__",
-  ".pytest_cache",
-  ".mypy_cache",
-  ".ruff_cache",
-  "dist",
-  "build"
-)
+Next step:
+- (fill this in)
 
-$items = Get-ChildItem -LiteralPath $repoRoot -Force
-foreach ($it in $items) {
-  if ($exclude -contains $it.Name) { continue }
-  Copy-Item -Recurse -Force -LiteralPath $it.FullName -Destination (Join-Path $tmp $it.Name)
-}
+Notes:
+$Note
+"@
 
-# --- Build zips (LATEST + timestamped) ---
-if (Test-Path -LiteralPath $zipPath) { Remove-Item -Force -LiteralPath $zipPath }
+# Write with trailing newline to avoid EOF fixer churn
+Set-Content -LiteralPath $checkpointPath -Value ($checkpoint + "`r`n") -Encoding utf8
+Set-Content -LiteralPath $handoffPath    -Value ($handoff + "`r`n")    -Encoding utf8
 
-Compress-Archive -Path (Join-Path $tmp "*") -DestinationPath $zipPath -Force
-Compress-Archive -Path (Join-Path $tmp "*") -DestinationPath $zipTsPath -Force
-
-# --- Hashes ---
-$h1 = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash
-$h2 = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipTsPath).Hash
-
-@"
-ZIP SHA256
-$zipPath
-$h1
-
-$zipTsPath
-$h2
-"@ | Set-Content -Encoding UTF8 -NoNewline -LiteralPath $shaPath
-
-# --- Cleanup ---
-Remove-Item -Recurse -Force -LiteralPath $tmp
-
-Say "jp-save complete."
-Say "Repo: $repoRoot"
-Say "Branch: $branch"
-Say "Head: $head1"
-Say "Zip:  $zipPath"
-Say "Zip+: $zipTsPath"
-Say "Mark: $markerPath"
-Say "SHA:  $shaPath"
+Say ""
+Say "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
+Say "JP SAVE — DONE"
+Say ("LATEST ZIP:    " + $latestZip)
+Say ("TIMESTAMP ZIP: " + $timeZip)
+Say ("DESKTOP ZIP:   " + $desktopLatest)
+Say ("CHECKPOINT:    " + $checkpointPath)
+Say ("HANDOFF:       " + $handoffPath)
+Say "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
+Say ""
