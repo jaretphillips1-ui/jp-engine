@@ -112,7 +112,17 @@ try {
   if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
     Say "PSScriptAnalyzer not installed locally (OK). CI will install it."
   } else {
-    $issues = Invoke-ScriptAnalyzer -Path (Join-Path $repoRoot "scripts") -Recurse -Severity @('Error','Warning') -ErrorAction Stop
+    $scriptsPath = Join-Path $repoRoot "scripts"
+    $psFiles = Get-ChildItem -LiteralPath $scriptsPath -Recurse -Filter "*.ps1" -File | Sort-Object FullName
+
+    $issues = @()
+    foreach ($f in $psFiles) {
+      try {
+        $issues += Invoke-ScriptAnalyzer -Path $f.FullName -Severity @('Error','Warning') -Recurse:$false -ErrorAction Stop
+      } catch {
+        throw ("Invoke-ScriptAnalyzer crashed on file: {0}`n{1}" -f $f.FullName, $_.Exception.Message)
+      }
+    }
     $errors = @($issues | Where-Object Severity -eq 'Error')
     if ($errors.Count -gt 0) {
       $errors | ForEach-Object { Write-Host ("ERROR: " + $_.RuleName + " — " + $_.Message + " (" + $_.ScriptName + ":" + $_.Line + ")") }
