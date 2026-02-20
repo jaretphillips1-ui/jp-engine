@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # Tripwire (front-door rails)
-& .\scripts\jp-tripwire.ps1
+& .\scripts\jp-tripwire.ps1 -AllowDirty
 
 
 function Say([string]$s) { Write-Host $s }
