@@ -93,21 +93,25 @@ $stamp  = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 # --- Latest Release (via gh --json) ---
 # Prefer: `gh release view --json ...` (latest by default; avoids list-flag drift)
-$rel = Try-GhJson @(
-  'release','view',
-  '--json','tagName,name,url,isDraft,isPrerelease,createdAt,publishedAt,author,assets'
-)
-
+# Prefer: gh release view (latest by default; avoids list-flag drift)
+$rel = $null
+try {
+  $relRaw = & gh release view --repo $script:RepoSlug --json tagName,name,url,isDraft,isPrerelease,createdAt,publishedAt,author,assets 2>$null
+  if ($LASTEXITCODE -eq 0 -and $relRaw) {
+    $rel = (($relRaw -join "`n") | ConvertFrom-Json)
+  }
+} catch { $rel = $null }
 # If latest is a draft (or view returned null), fallback:
 # - list a handful
 # - pick first non-draft by publishedAt/createdAt
 if (-not $rel -or $rel.isDraft) {
-  $list = Try-GhJson @(
-    'release','list',
-    '--limit','20',
-    '--json','tagName,isDraft,publishedAt,createdAt'
-  )
-
+  $list = $null
+  try {
+    $listRaw = & gh release list --repo $script:RepoSlug --limit 20 --json tagName,isDraft,publishedAt,createdAt 2>$null
+    if ($LASTEXITCODE -eq 0 -and $listRaw) {
+      $list = (($listRaw -join "`n") | ConvertFrom-Json)
+    }
+  } catch { $list = $null }
   if ($list) {
     $pick = $list |
       Where-Object { $_.isDraft -ne $true } |
@@ -115,10 +119,13 @@ if (-not $rel -or $rel.isDraft) {
       Select-Object -First 1
 
     if ($pick -and $pick.tagName) {
-      $rel = Try-GhJson @(
-        'release','view', $pick.tagName,
-        '--json','tagName,name,url,isDraft,isPrerelease,createdAt,publishedAt,author,assets'
-      )
+      $rel = $null
+      try {
+        $relRaw = & gh release view $pick.tagName --repo $script:RepoSlug --json tagName,name,url,isDraft,isPrerelease,createdAt,publishedAt,author,assets 2>$null
+        if ($LASTEXITCODE -eq 0 -and $relRaw) {
+          $rel = (($relRaw -join "`n") | ConvertFrom-Json)
+        }
+      } catch { $rel = $null }
     }
   }
 }
