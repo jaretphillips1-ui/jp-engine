@@ -84,7 +84,7 @@ function Assert-InAllowedRepo([string]$RepoRoot) {
 
   if ($IsWindows) {
     # Local dev canonical expected root (Windows-only).
-    $localExpected = "C:\Dev\JP_ENGINE\jp-engine"
+    $localExpected = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
     $expected = Get-NormalizedPath $localExpected
 
     if ($expected -ne $normRepo) {
