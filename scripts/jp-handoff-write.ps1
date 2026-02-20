@@ -14,9 +14,33 @@ function Require-Tool([string]$name){
   if (-not $cmd) { Die ("Missing required tool: {0}" -f $name) }
 }
 
+function Get-RepoSlug {
+  # Derive owner/repo from origin remote (supports https + ssh)
+  $u = (git remote get-url origin 2>$null)
+  if (-not $u) { throw 'Cannot read origin remote URL.' }
+  $u = $u.Trim()
+
+  # https://github.com/owner/repo.git OR https://github.com/owner/repo
+  if ($u -match '^https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?$') {
+    return ("{0}/{1}" -f $Matches[1], $Matches[2])
+  }
+
+  # git@github.com:owner/repo.git
+  if ($u -match '^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$') {
+    return ("{0}/{1}" -f $Matches[1], $Matches[2])
+  }
+
+  throw ("Unrecognized origin URL format: {0}" -f $u)
+}
 function Try-GhJson([string[]]$args){
   try {
-    $raw = & gh @args 2>$null
+    # Ensure gh targets the correct repo (owner/name) deterministically
+$useArgs = $args
+if ((-not ($useArgs -contains '--repo')) -and $script:RepoSlug) {
+  $useArgs = @($useArgs + @('--repo', $script:RepoSlug))
+}
+
+$raw = & gh @useArgs 2>$null
     if ($LASTEXITCODE -ne 0) { return $null }
     if (-not $raw) { return $null }
     return ($raw | ConvertFrom-Json)
@@ -29,6 +53,8 @@ if (-not (Test-Path ".git")) { Die "Not in repo root." }
 
 Require-Tool git
 Require-Tool gh
+
+$script:RepoSlug = Get-RepoSlug
 
 $branch = (git rev-parse --abbrev-ref HEAD).Trim()
 $commit = (git rev-parse --short HEAD).Trim()
