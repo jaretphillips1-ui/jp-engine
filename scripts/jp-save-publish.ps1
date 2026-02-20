@@ -1,5 +1,20 @@
+[CmdletBinding()]
+param(
+  [string]$RepoRoot = (Get-Location).Path,
+  [string]$ReleasePrefix = 'jp-save',
+  [switch]$OpenRelease
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Assert-LastExitCode {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Context)
+  if ($global:LASTEXITCODE -ne 0) {
+    throw ("{0} failed (exit code {1})." -f $Context, $global:LASTEXITCODE)
+  }
+}
 
 function Step([string]$n,[scriptblock]$sb){
   Write-Host ""
@@ -8,35 +23,35 @@ function Step([string]$n,[scriptblock]$sb){
   catch { Write-Host ("FAIL: {0}" -f $n) -ForegroundColor Red; throw }
 }
 
-param(
-  [string]$RepoRoot = (Get-Location).Path,
-  [string]$ReleasePrefix = 'jp-save',
-  [switch]$OpenRelease
-)
+function Normalize-Path([string]$p) {
+  if (-not $p) { return '' }
+  $p = $p.Trim().Replace('/','\')
+  try { $p = (Resolve-Path -LiteralPath $p).Path } catch { }
+  $p.TrimEnd('\')
+}
 
-Set-Location -LiteralPath $RepoRoot
+$repoN = Normalize-Path $RepoRoot
+Set-Location -LiteralPath $repoN
 
-$saveScript = Join-Path $RepoRoot 'scripts\jp-save.ps1'
+$saveScript = Join-Path $repoN 'scripts\jp-save.ps1'
 if (-not (Test-Path -LiteralPath $saveScript)) { throw ("Missing: {0}" -f $saveScript) }
 
 Step 'RUN jp-save.ps1 (produce artifacts)' {
   $out = & $saveScript 2>&1 | ForEach-Object { $_.ToString() }
   $out | ForEach-Object { Write-Host $_ }
 
-  # Parse: Zip:, Zip+:, Mark:, SHA:
-  $zipLine    = $out | Where-Object { $_ -match '^\s*Zip:\s+'  } | Select-Object -First 1
-  $zipPlusLine= $out | Where-Object { $_ -match '^\s*Zip\+:\s+'} | Select-Object -First 1
-  $markLine   = $out | Where-Object { $_ -match '^\s*Mark:\s+' } | Select-Object -First 1
-  $shaLine    = $out | Where-Object { $_ -match '^\s*SHA:\s+'  } | Select-Object -First 1
+  $zipLine     = $out | Where-Object { $_ -match '^\s*Zip:\s+'   } | Select-Object -First 1
+  $zipPlusLine = $out | Where-Object { $_ -match '^\s*Zip\+:\s+' } | Select-Object -First 1
+  $markLine    = $out | Where-Object { $_ -match '^\s*Mark:\s+'  } | Select-Object -First 1
+  $shaLine     = $out | Where-Object { $_ -match '^\s*SHA:\s+'   } | Select-Object -First 1
 
-  $Zip    = if ($zipLine)     { ($zipLine     -replace '^\s*Zip:\s+','').Trim() } else { $null }
-  $ZipPlus= if ($zipPlusLine) { ($zipPlusLine -replace '^\s*Zip\+:\s+','').Trim() } else { $null }
-  $Mark   = if ($markLine)    { ($markLine    -replace '^\s*Mark:\s+','').Trim() } else { $null }
-  $Sha    = if ($shaLine)     { ($shaLine     -replace '^\s*SHA:\s+','').Trim() } else { $null }
+  $Zip     = if ($zipLine)     { ($zipLine     -replace '^\s*Zip:\s+','').Trim() } else { $null }
+  $ZipPlus = if ($zipPlusLine) { ($zipPlusLine -replace '^\s*Zip\+:\s+','').Trim() } else { $null }
+  $Mark    = if ($markLine)    { ($markLine    -replace '^\s*Mark:\s+','').Trim() } else { $null }
+  $Sha     = if ($shaLine)     { ($shaLine     -replace '^\s*SHA:\s+','').Trim() } else { $null }
 
   if (-not $Zip -and -not $ZipPlus) { throw "Could not parse Zip/Zip+ from jp-save output." }
 
-  # Prefer timestamped Zip+ as the primary release artifact
   $PrimaryZip = if ($ZipPlus) { $ZipPlus } else { $Zip }
 
   foreach ($p in @($PrimaryZip,$Zip,$Mark,$Sha) | Where-Object { $_ }) {
@@ -50,9 +65,8 @@ Step 'RUN jp-save.ps1 (produce artifacts)' {
 }
 
 Step 'CREATE GitHub Release + UPLOAD assets' {
-  # timestamp tag
-  $ts  = Get-Date -Format 'yyyyMMdd-HHmmss'
-  $tag = "{0}-{1}" -f $ReleasePrefix, $ts
+  $ts    = Get-Date -Format 'yyyyMMdd-HHmmss'
+  $tag   = "{0}-{1}" -f $ReleasePrefix, $ts
   $title = "JP Engine Save {0}" -f $ts
 
   $assets = @($JP_PRIMARY_ZIP)
@@ -60,12 +74,12 @@ Step 'CREATE GitHub Release + UPLOAD assets' {
   if ($JP_MARK)       { $assets += $JP_MARK }
   if ($JP_SHA)        { $assets += $JP_SHA }
 
-  # Create release (fails hard if it can't)
   gh release create $tag --title $title --notes "Automated save snapshot from jp-save.ps1" | Out-Host
+  Assert-LastExitCode -Context "gh release create"
 
-  # Upload assets (explicit; fail hard on any error)
   foreach ($a in $assets) {
     gh release upload $tag $a --clobber | Out-Host
+    Assert-LastExitCode -Context ("gh release upload: {0}" -f $a)
   }
 
   Write-Host ("Release created: tag={0}" -f $tag) -ForegroundColor DarkCyan
@@ -75,6 +89,7 @@ Step 'CREATE GitHub Release + UPLOAD assets' {
 if ($OpenRelease) {
   Step 'OPEN Release in browser' {
     gh release view $JP_RELEASE_TAG --web | Out-Null
+    Assert-LastExitCode -Context "gh release view --web"
   }
 }
 
