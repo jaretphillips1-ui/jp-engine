@@ -38,6 +38,14 @@ Integrity:
   - SHA256 line on the next non-empty line
 
 ## Pre-commit / line endings gotchas
+
+### Encoding / quote safety (PowerShell doc writes)
+- Prefer ASCII punctuation when writing docs from PowerShell:
+  - Use " instead of smart quotes
+  - Use ' instead of curly apostrophes
+  - Use ... instead of Unicode ellipsis
+- Use SINGLE-QUOTED here-strings (@' ... '@) and insert variables via -f formatting.
+- Avoid pasted Unicode punctuation to prevent mojibake artifacts (example: mojibake like "ΓÇ£").
 - If pre-commit modifies files (e.g., end-of-file-fixer), re-stage and commit again.
 - If Git warns about CRLF/LF:
   - It's a warning; only change settings if Git blocks staging/commit.
