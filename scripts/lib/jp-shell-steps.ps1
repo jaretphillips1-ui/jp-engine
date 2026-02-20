@@ -12,8 +12,13 @@ function Step {
 
   Write-Host ""
   Write-Host ("=== {0} ===" -f $Name) -ForegroundColor Cyan
-  & $Action
-  Write-Host ("PASS: {0}" -f $Name) -ForegroundColor Green
+  try {
+    & $Action
+    Write-Host ("PASS: {0}" -f $Name) -ForegroundColor Green
+  } catch {
+    Write-Host ("FAIL: {0}" -f $Name) -ForegroundColor Red
+    throw
+  }
 }
 
 function Step-Commit {
@@ -25,5 +30,17 @@ function Step-Commit {
 
   $before = Get-GitHead
   git commit -m $Message | Write-Host
+  Assert-LastExitCode -Context ("git commit ({0})" -f $Context)
   Assert-GitCommitHappened -BeforeHead $before -Context $Context
+}
+
+function Step-Push {
+  [CmdletBinding()]
+  param(
+    [string]$Context = "push step"
+  )
+
+  git push | Write-Host
+  Assert-LastExitCode -Context ("git push ({0})" -f $Context)
+  Assert-GitPushedToUpstream -Context $Context
 }
