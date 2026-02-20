@@ -1,31 +1,51 @@
-[CmdletBinding()]
-param(
-  [int]$StopThick = 4,
-  [int]$BannerThick = 4
-)
+param()
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = Split-Path -Parent $repoRoot
+function Say([string]$s) { Write-Host $s }
 
-$break = Join-Path $repoRoot "scripts\jp-break.ps1"
-if (Test-Path -LiteralPath $break) {
-  & $break -Color -Bold -Thick $BannerThick -Label ("⚪ JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss")) | Out-Null
+$repoRoot = 'C:\Users\lsphi\OneDrive\AI_Workspace\JP_ENGINE\jp-engine'
+if (-not (Test-Path -LiteralPath $repoRoot)) { throw "RepoRoot not found: $repoRoot" }
+
+Set-Location -LiteralPath $repoRoot
+
+Say ""
+Say "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
+Say "JP START — CONTEXT"
+Say "repo: $repoRoot"
+Say ("time: " + [DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss'))
+Say "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
+Say ""
+
+$remindersPath = Join-Path $repoRoot 'docs\AI_REMINDERS.md'
+$guidebookPath = Join-Path $repoRoot 'docs\JP_GUIDEBOOK.md'
+
+if (Test-Path -LiteralPath $remindersPath) {
+  Say "— AI REMINDERS (read at start) —"
+  Get-Content -LiteralPath $remindersPath -Raw | Write-Host
 } else {
-  Write-Host ""
-  Write-Host ("⚪ JP START — " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
+  Say "WARNING: missing docs\AI_REMINDERS.md"
 }
 
-Write-Host ("repo: " + $repoRoot)
-
-if (Get-Command git -ErrorAction SilentlyContinue) {
-  $branch = (git rev-parse --abbrev-ref HEAD) 2>$null
-  if ($branch) { Write-Host ("git branch: " + $branch.Trim()) }
+if (Test-Path -LiteralPath $guidebookPath) {
+  Say ""
+  Say "— GUIDEBOOK (TOC quick scan) —"
+  # Print first ~60 lines as a quick TOC/context view
+  (Get-Content -LiteralPath $guidebookPath -TotalCount 60) | ForEach-Object { Write-Host $_ }
+} else {
+  Say "WARNING: missing docs\JP_GUIDEBOOK.md"
 }
 
-$smoke = Join-Path $repoRoot "scripts\jp-smoke.ps1"
-if (-not (Test-Path -LiteralPath $smoke)) { throw "jp-smoke.ps1 not found at $smoke" }
+Say ""
+Say "— RUNNING VALIDATE —"
+$validate = Join-Path $repoRoot 'scripts\jp-validate.ps1'
+if (Test-Path -LiteralPath $validate) { & $validate } else { throw "Missing: $validate" }
 
-& $smoke -StopThick $StopThick
+Say ""
+Say "— RUNNING VERIFY —"
+$verify = Join-Path $repoRoot 'scripts\jp-verify.ps1'
+if (Test-Path -LiteralPath $verify) { & $verify } else { throw "Missing: $verify" }
+
+Say ""
+Say "JP START — DONE"
