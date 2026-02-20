@@ -11,11 +11,10 @@ function Die([string]$m){ throw $m }
 
 function Require-Tool([string]$name){
   $cmd = Get-Command $name -ErrorAction SilentlyContinue
-  if (-not $cmd) { Die "Missing required tool: $name" }
+  if (-not $cmd) { Die ("Missing required tool: {0}" -f $name) }
 }
 
 function Try-GhJson([string[]]$args){
-  # Returns deserialized JSON (or $null if gh fails)
   try {
     $raw = & gh @args 2>$null
     if ($LASTEXITCODE -ne 0) { return $null }
@@ -37,27 +36,45 @@ $msg    = (git log -1 --pretty=%s).Trim()
 $stamp  = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 # --- Latest Release (via gh --json) ---
-# Get most recent release tag (non-draft). Use list so we don't guess tag names.
-$relList = Try-GhJson @("release","list","--limit","1","--exclude-drafts","--json","tagName,createdAt,publishedAt")
-$tag = $null
-if ($relList -and $relList.Count -ge 1) {
-  $tag = $relList[0].tagName
-}
+# Prefer: `gh release view --json ...` (latest by default; avoids list-flag drift)
+$rel = Try-GhJson @(
+  'release','view',
+  '--json','tagName,name,url,isDraft,isPrerelease,createdAt,publishedAt,author,assets'
+)
 
-$rel = $null
-if ($tag) {
-  $rel = Try-GhJson @("release","view",$tag,"--json","tagName,name,url,isDraft,isPrerelease,createdAt,publishedAt,author,assets")
+# If latest is a draft (or view returned null), fallback:
+# - list a handful
+# - pick first non-draft by publishedAt/createdAt
+if (-not $rel -or $rel.isDraft) {
+  $list = Try-GhJson @(
+    'release','list',
+    '--limit','20',
+    '--json','tagName,isDraft,publishedAt,createdAt'
+  )
+
+  if ($list) {
+    $pick = $list |
+      Where-Object { $_.isDraft -ne $true } |
+      Sort-Object @{Expression = { if ($_.publishedAt) { $_.publishedAt } else { $_.createdAt } }; Descending = $true } |
+      Select-Object -First 1
+
+    if ($pick -and $pick.tagName) {
+      $rel = Try-GhJson @(
+        'release','view', $pick.tagName,
+        '--json','tagName,name,url,isDraft,isPrerelease,createdAt,publishedAt,author,assets'
+      )
+    }
+  }
 }
 
 # --- Local artifacts snapshot ---
 $local = @{
-  saveRoot = $SaveRoot
-  exists   = $false
+  saveRoot  = $SaveRoot
+  exists    = $false
   latestZip = $null
   timedZip  = $null
   shaFile   = $null
   checkpoint = $null
-  files = @()
 }
 
 if (Test-Path -LiteralPath $SaveRoot) {
@@ -65,75 +82,68 @@ if (Test-Path -LiteralPath $SaveRoot) {
   $files = Get-ChildItem -LiteralPath $SaveRoot -File -ErrorAction Stop |
     Sort-Object LastWriteTime -Descending
 
-  $local.files = @(
-    $files | Select-Object Name,Length,LastWriteTime
-  )
-
-  # heuristic: prefer LATEST.zip for latestZip; any JP_ENGINE_*.zip for timedZip (most recent)
-  $latest = $files | Where-Object Name -ieq "JP_ENGINE_LATEST.zip" | Select-Object -First 1
+  $latest = $files | Where-Object Name -ieq 'JP_ENGINE_LATEST.zip' | Select-Object -First 1
   if ($latest) { $local.latestZip = $latest }
 
   $timed = $files | Where-Object Name -match '^JP_ENGINE_\d{8}_\d{6}\.zip$' | Select-Object -First 1
   if ($timed) { $local.timedZip = $timed }
 
-  $sha = $files | Where-Object Name -ieq "JP_ENGINE_ZIP_SHA256.txt" | Select-Object -First 1
+  $sha = $files | Where-Object Name -ieq 'JP_ENGINE_ZIP_SHA256.txt' | Select-Object -First 1
   if ($sha) { $local.shaFile = $sha }
 
-  $cp = $files | Where-Object Name -ieq "JP_ENGINE_LATEST_CHECKPOINT.txt" | Select-Object -First 1
+  $cp = $files | Where-Object Name -ieq 'JP_ENGINE_LATEST_CHECKPOINT.txt' | Select-Object -First 1
   if ($cp) { $local.checkpoint = $cp }
 }
 
 # --- Build markdown ---
 $md = New-Object System.Text.StringBuilder
-[void]$md.AppendLine("# JP Engine Handoff")
-[void]$md.AppendLine("")
-[void]$md.AppendLine("Generated: $stamp")
-[void]$md.AppendLine("")
-[void]$md.AppendLine("## Repo State")
-[void]$md.AppendLine("- Branch: $branch")
-[void]$md.AppendLine("- Commit: $commit")
-[void]$md.AppendLine("- Message: $msg")
-[void]$md.AppendLine("")
+[void]$md.AppendLine('# JP Engine Handoff')
+[void]$md.AppendLine('')
+[void]$md.AppendLine(('Generated: {0}' -f $stamp))
+[void]$md.AppendLine('')
 
-[void]$md.AppendLine("## Latest GitHub Release")
+[void]$md.AppendLine('## Repo State')
+[void]$md.AppendLine(('- Branch: {0}' -f $branch))
+[void]$md.AppendLine(('- Commit: {0}' -f $commit))
+[void]$md.AppendLine(('- Message: {0}' -f $msg))
+[void]$md.AppendLine('')
+
+[void]$md.AppendLine('## Latest GitHub Release')
 if (-not $rel) {
-  [void]$md.AppendLine("- (unavailable) Could not fetch latest release via gh.")
+  [void]$md.AppendLine('- (unavailable) Could not fetch latest release via gh.')
 } else {
-  [void]$md.AppendLine(("- Tag: {0}" -f $rel.tagName))
-  if ($rel.url)        { [void]$md.AppendLine(("- URL: {0}" -f $rel.url)) }
-  if ($rel.publishedAt){ [void]$md.AppendLine(("- Published: {0}" -f $rel.publishedAt)) }
-  [void]$md.AppendLine(("- Draft: {0}" -f $rel.isDraft))
-  [void]$md.AppendLine(("- Prerelease: {0}" -f $rel.isPrerelease))
+  [void]$md.AppendLine(('- Tag: {0}' -f $rel.tagName))
+  if ($rel.url)         { [void]$md.AppendLine(('- URL: {0}' -f $rel.url)) }
+  if ($rel.publishedAt) { [void]$md.AppendLine(('- Published: {0}' -f $rel.publishedAt)) }
+  [void]$md.AppendLine(('- Draft: {0}' -f $rel.isDraft))
+  [void]$md.AppendLine(('- Prerelease: {0}' -f $rel.isPrerelease))
 
   if ($rel.assets -and $rel.assets.Count -gt 0) {
-    [void]$md.AppendLine("")
-    [void]$md.AppendLine("### Assets")
+    [void]$md.AppendLine('')
+    [void]$md.AppendLine('### Assets')
     foreach ($a in $rel.assets) {
-      # size is bytes
-      $sz = $a.size
-      $nm = $a.name
-      [void]$md.AppendLine(("- {0} ({1} bytes)" -f $nm, $sz))
+      [void]$md.AppendLine(('- {0} ({1} bytes)' -f $a.name, $a.size))
     }
   }
 }
-[void]$md.AppendLine("")
+[void]$md.AppendLine('')
 
-[void]$md.AppendLine("## Local Save Artifacts")
-[void]$md.AppendLine(("- Save root: {0}" -f $SaveRoot))
+[void]$md.AppendLine('## Local Save Artifacts')
+[void]$md.AppendLine(('- Save root: {0}' -f $SaveRoot))
 if (-not $local.exists) {
-  [void]$md.AppendLine("- Status: (missing) Save root not found.")
+  [void]$md.AppendLine('- Status: (missing) Save root not found.')
 } else {
-  if ($local.latestZip) { [void]$md.AppendLine(("- Latest ZIP: {0} ({1} bytes, {2})" -f $local.latestZip.Name, $local.latestZip.Length, $local.latestZip.LastWriteTime)) }
-  if ($local.timedZip)  { [void]$md.AppendLine(("- Timed ZIP: {0} ({1} bytes, {2})" -f $local.timedZip.Name, $local.timedZip.Length, $local.timedZip.LastWriteTime)) }
-  if ($local.shaFile)   { [void]$md.AppendLine(("- SHA file: {0} ({1} bytes, {2})" -f $local.shaFile.Name, $local.shaFile.Length, $local.shaFile.LastWriteTime)) }
-  if ($local.checkpoint){ [void]$md.AppendLine(("- Checkpoint: {0} ({1} bytes, {2})" -f $local.checkpoint.Name, $local.checkpoint.Length, $local.checkpoint.LastWriteTime)) }
+  if ($local.latestZip) { [void]$md.AppendLine(('- Latest ZIP: {0} ({1} bytes, {2})' -f $local.latestZip.Name, $local.latestZip.Length, $local.latestZip.LastWriteTime)) }
+  if ($local.timedZip)  { [void]$md.AppendLine(('- Timed ZIP: {0} ({1} bytes, {2})' -f $local.timedZip.Name, $local.timedZip.Length, $local.timedZip.LastWriteTime)) }
+  if ($local.shaFile)   { [void]$md.AppendLine(('- SHA file: {0} ({1} bytes, {2})' -f $local.shaFile.Name, $local.shaFile.Length, $local.shaFile.LastWriteTime)) }
+  if ($local.checkpoint){ [void]$md.AppendLine(('- Checkpoint: {0} ({1} bytes, {2})' -f $local.checkpoint.Name, $local.checkpoint.Length, $local.checkpoint.LastWriteTime)) }
 }
-[void]$md.AppendLine("")
+[void]$md.AppendLine('')
 
-[void]$md.AppendLine("## Work Context")
-[void]$md.AppendLine("- What I was doing:")
-[void]$md.AppendLine("- What’s next:")
-[void]$md.AppendLine("- Housekeeping:")
+[void]$md.AppendLine('## Work Context')
+[void]$md.AppendLine('- What I was doing:')
+[void]$md.AppendLine('- What’s next:')
+[void]$md.AppendLine('- Housekeeping:')
 
 $md.ToString() | Set-Content -LiteralPath $HandoffPath -Encoding utf8
 Write-Host ("Handoff written -> {0}" -f $HandoffPath) -ForegroundColor Green
