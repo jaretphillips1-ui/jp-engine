@@ -72,7 +72,8 @@ if ((-not [string]::IsNullOrWhiteSpace($nr)) -and (-not [string]::IsNullOrWhiteS
   Say "WARNING: repo path looks like OneDrive, but this is not the canonical JP Engine repo. Canonical repo: $canonicalRepoRoot"
 }
 
-Require-Cmd "git" "Install Git and ensure it's on PATH." | Out-Null$branch = Try-Line { git rev-parse --abbrev-ref HEAD } ""
+Require-Cmd "git" "Install Git and ensure it's on PATH." | Out-Null
+  $branch = Try-Line { git rev-parse --abbrev-ref HEAD } ""
   if ($branch) { Say ("git branch: " + $branch) }
 
   BreakLine "VERIFY — TOOLS" -Thick 4
