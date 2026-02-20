@@ -118,5 +118,6 @@ if ($Commands.Count -eq 0) {
       Write-Host ("  {0}" -f (Join-Path $PSScriptRoot 'commands'))
     }
   }
-}Invoke-JPCommand -Name $Command -Registry $Commands
+}
+Invoke-JPCommand -Name $Command -Registry $Commands
 JP-Exit -Code 0
