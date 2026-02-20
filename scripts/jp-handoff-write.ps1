@@ -54,23 +54,16 @@ function Try-GhJson([string[]]$args){
     $iObj = $s.IndexOf('{')
     $iArr = $s.IndexOf('[')
     if ($iObj -ge 0 -or $iArr -ge 0) {
-      $start = if ($iObj -ge 0 -and $iArr -ge 0) { [Math]::Min($iObj,$iArr) } elseif ($iObj -ge 0) { $iObj } else { $iArr }
+      $startIx = if ($iObj -ge 0 -and $iArr -ge 0) { [Math]::Min($iObj,$iArr) } elseif ($iObj -ge 0) { $iObj } else { $iArr }
       $endObj = $s.LastIndexOf('}')
       $endArr = $s.LastIndexOf(']')
-      $end = [Math]::Max($endObj,$endArr)
-      if ($end -gt $start) {
-        $json = $s.Substring($start, ($end - $start + 1))
+      $endIx = [Math]::Max($endObj,$endArr)
+      if ($endIx -gt $startIx) {
+        $json = $s.Substring($startIx, ($endIx - $startIx + 1))
       }
     }
 
     return ($json | ConvertFrom-Json)
-  } catch {
-    return $null
-  }
-}$raw = & gh @useArgs 2>$null
-    if ($LASTEXITCODE -ne 0) { return $null }
-    if (-not $raw) { return $null }
-    return ($raw | ConvertFrom-Json)
   } catch {
     return $null
   }
