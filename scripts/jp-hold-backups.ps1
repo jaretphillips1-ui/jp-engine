@@ -90,19 +90,49 @@ function Parse-ShaFile {
   $map = @{}
 
   $lines = Get-Content -LiteralPath $ShaFilePath -ErrorAction Stop
+
+  # Some generators emit "pairs":
+  #   ZIP SHA256
+  #   C:\path\file.zip
+  #   <hash>
+  # (blank line)
+  $pendingFile = $null
+
   foreach ($ln in $lines) {
     $t = $ln.Trim()
     if (-not $t) { continue }
 
+    # Skip simple headers
+    if ($t -match '^(ZIP\s+SHA256|SHA256\s+SUMS?)$') { continue }
+
+    # Format 1: "<hash>  <filename>" or "<hash> *<filename>"
     if ($t -match '^(?<hash>[0-9a-fA-F]{64})\s+\*?(?<file>.+)$') {
       $map[(Split-Path -Leaf $matches.file)] = $matches.hash.ToLowerInvariant()
+      $pendingFile = $null
       continue
     }
 
+    # Format 2: "SHA256(<filename>) = <hash>"
     if ($t -match '^SHA256\((?<file>.+)\)\s*=\s*(?<hash>[0-9a-fA-F]{64})$') {
       $map[(Split-Path -Leaf $matches.file)] = $matches.hash.ToLowerInvariant()
+      $pendingFile = $null
       continue
     }
+
+    # Pair format: line with a path to a zip, followed by a 64-hex hash
+    if ($t -match '\.zip$') {
+      $pendingFile = $t
+      continue
+    }
+
+    if ($pendingFile -and $t -match '^(?<hash>[0-9a-fA-F]{64})$') {
+      $map[(Split-Path -Leaf $pendingFile)] = $matches.hash.ToLowerInvariant()
+      $pendingFile = $null
+      continue
+    }
+
+    # If we had a pending file but got a non-hash line, drop it
+    if ($pendingFile) { $pendingFile = $null }
   }
 
   if ($map.Count -eq 0) {
