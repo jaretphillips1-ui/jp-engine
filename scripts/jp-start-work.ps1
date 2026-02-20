@@ -90,7 +90,7 @@ function Run-IfExists([string]$File, [string]$Label, [switch]$Preview) {
 }
 
 # ---- main ----
-Assert-RepoRoot -Root $RepoRoot
+Assert-RepoRoot -RepoRoot $RepoRoot
 Assert-OnMaster
 
 # Require explicit mode selection

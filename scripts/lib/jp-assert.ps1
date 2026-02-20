@@ -45,4 +45,4 @@ function Assert-CleanTree {
   throw "Working tree is not clean. Run: git status --porcelain"
 }
 
-Export-ModuleMember -Function Assert-RepoRoot, Assert-CleanTree -ErrorAction SilentlyContinue
+try { Export-ModuleMember -Function Assert-RepoRoot, Assert-CleanTree -ErrorAction Stop } catch { }
