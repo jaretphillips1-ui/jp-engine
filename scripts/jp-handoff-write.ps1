@@ -35,12 +35,39 @@ function Get-RepoSlug {
 function Try-GhJson([string[]]$args){
   try {
     # Ensure gh targets the correct repo (owner/name) deterministically
-$useArgs = $args
-if ((-not ($useArgs -contains '--repo')) -and $script:RepoSlug) {
-  $useArgs = @($useArgs + @('--repo', $script:RepoSlug))
-}
+    $useArgs = $args
+    if ((-not ($useArgs -contains '--repo')) -and $script:RepoSlug) {
+      $useArgs = @($useArgs + @('--repo', $script:RepoSlug))
+    }
 
-$raw = & gh @useArgs 2>$null
+    # Capture stdout (PowerShell may return string[]); ignore stderr noise
+    $raw = & gh @useArgs 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    if ($null -eq $raw) { return $null }
+
+    # Normalize to a single string
+    $s = ($raw -join "`n").Trim()
+    if (-not $s) { return $null }
+
+    # If anything non-JSON sneaks into stdout, extract the JSON object/array
+    $json = $s
+    $iObj = $s.IndexOf('{')
+    $iArr = $s.IndexOf('[')
+    if ($iObj -ge 0 -or $iArr -ge 0) {
+      $start = if ($iObj -ge 0 -and $iArr -ge 0) { [Math]::Min($iObj,$iArr) } elseif ($iObj -ge 0) { $iObj } else { $iArr }
+      $endObj = $s.LastIndexOf('}')
+      $endArr = $s.LastIndexOf(']')
+      $end = [Math]::Max($endObj,$endArr)
+      if ($end -gt $start) {
+        $json = $s.Substring($start, ($end - $start + 1))
+      }
+    }
+
+    return ($json | ConvertFrom-Json)
+  } catch {
+    return $null
+  }
+}$raw = & gh @useArgs 2>$null
     if ($LASTEXITCODE -ne 0) { return $null }
     if (-not $raw) { return $null }
     return ($raw | ConvertFrom-Json)
