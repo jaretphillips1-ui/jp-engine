@@ -142,7 +142,7 @@ if (-not $local.exists) {
 
 [void]$md.AppendLine('## Work Context')
 [void]$md.AppendLine('- What I was doing:')
-[void]$md.AppendLine('- What’s next:')
+[void]$md.AppendLine('- What''s next:')
 [void]$md.AppendLine('- Housekeeping:')
 
 $md.ToString() | Set-Content -LiteralPath $HandoffPath -Encoding utf8
