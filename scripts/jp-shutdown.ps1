@@ -75,5 +75,12 @@ Step "FINAL STATUS CHECK" {
   git status -sb | Out-Host
 }
 
+Step "WRITE HANDOFF (docs/JP_ENGINE_HANDOFF.md)" {
+  $w = Join-Path $repoN 'scripts\jp-handoff-write.ps1'
+  if (-not (Test-Path -LiteralPath $w)) { throw "Missing: scripts\jp-handoff-write.ps1" }
+  pwsh -NoProfile -File $w
+  if ($LASTEXITCODE -ne 0) { throw ("jp-handoff-write.ps1 failed (exit code {0})." -f $LASTEXITCODE) }
+}
+
 Write-Host ""
 Write-Host "🟢 JP ENGINE FULL SHUTDOWN COMPLETE (with backups held + restore proven)." -ForegroundColor Green
