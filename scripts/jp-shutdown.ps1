@@ -26,6 +26,22 @@ function Normalize-Path([string]$p) {
 
 $repoN = Normalize-Path $RepoRoot
 Set-Location -LiteralPath $repoN
+# --- OPERATIONAL SCRIPT GATE (master must contain required ops scripts) ---
+# Reason: shutdown switches to master; ops scripts must exist there or shutdown will fail.
+$need = @(
+  'scripts/jp-hold-backups.ps1',
+  'scripts/jp-handoff-write.ps1'
+)
+
+foreach ($p in $need) {
+  $onMaster = git show "master:$p" 2>$null
+  if ($LASTEXITCODE -ne 0 -or -not $onMaster) {
+    throw "Operational script missing on master: $p
+Fix: merge the ops scripts PR into master, then rerun shutdown."
+  }
+}
+# --- END OPERATIONAL SCRIPT GATE ---
+
 
 Step "GATE (master clean + synced)" {
   git fetch --prune | Out-Host
