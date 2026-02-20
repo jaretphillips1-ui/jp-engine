@@ -1,102 +1,65 @@
-[CmdletBinding()]
 param(
-  [string]$RepoRoot = (Get-Location).Path,
-
-  # Skip these only if you know what you're doing
-  [switch]$SkipBackups,
-  [switch]$KeepRestoreDir
+  [Parameter(Mandatory=$true)]
+  [string]$Note
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Step([string]$n,[scriptblock]$sb){
-  Write-Host ""
-  Write-Host ("=== {0} ===" -f $n) -ForegroundColor Cyan
-  try { & $sb; Write-Host ("PASS: {0}" -f $n) -ForegroundColor Green }
-  catch { Write-Host ("FAIL: {0}" -f $n) -ForegroundColor Red; throw }
+function Say([string]$s) { Write-Host $s }
+
+$repoRoot = 'C:\Users\lsphi\OneDrive\AI_Workspace\JP_ENGINE\jp-engine'
+if (-not (Test-Path -LiteralPath $repoRoot)) { throw "RepoRoot not found: $repoRoot" }
+Set-Location -LiteralPath $repoRoot
+
+$saveScript = Join-Path $repoRoot 'scripts\jp-save.ps1'
+if (-not (Test-Path -LiteralPath $saveScript)) { throw "Missing: $saveScript" }
+
+$saveRoot = 'C:\Users\lsphi\OneDrive\AI_Workspace\_SAVES\JP_ENGINE\LATEST'
+if (-not (Test-Path -LiteralPath $saveRoot)) { New-Item -ItemType Directory -Path $saveRoot | Out-Null }
+
+Say ""
+Say "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
+Say "JP SHUTDOWN — START"
+Say ("repo: " + $repoRoot)
+Say ("time: " + [DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss'))
+Say "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
+Say ""
+
+# 0) Hard-stop if dirty (professional rule: save tracked state only)
+$porc = (git status --porcelain) 2>$null
+if ($porc) {
+  Say "ERROR: repo is not clean. Shutdown requires clean working tree."
+  Say ""
+  Say $porc
+  throw "Shutdown aborted: dirty working tree."
 }
 
-function Normalize-Path([string]$p) {
-  if (-not $p) { return '' }
-  $p = $p.Trim().Replace('/','\')
-  try { $p = (Resolve-Path -LiteralPath $p).Path } catch { }
-  $p.TrimEnd('\')
-}
+# 1) Prove validate+verify before saving (belt + suspenders)
+$validate = Join-Path $repoRoot 'scripts\jp-validate.ps1'
+if (-not (Test-Path -LiteralPath $validate)) { throw "Missing: $validate" }
+& $validate
 
-$repoN = Normalize-Path $RepoRoot
-Set-Location -LiteralPath $repoN
-# --- OPERATIONAL SCRIPT GATE (master must contain required ops scripts) ---
-# Reason: shutdown switches to master; ops scripts must exist there or shutdown will fail.
-$need = @(
-  'scripts/jp-hold-backups.ps1',
-  'scripts/jp-handoff-write.ps1'
-)
+$verify = Join-Path $repoRoot 'scripts\jp-verify.ps1'
+if (-not (Test-Path -LiteralPath $verify)) { throw "Missing: $verify" }
+& $verify
 
-foreach ($p in $need) {
-  $onMaster = git show "master:$p" 2>$null
-  if ($LASTEXITCODE -ne 0 -or -not $onMaster) {
-    throw "Operational script missing on master: $p
-Fix: merge the ops scripts PR into master, then rerun shutdown."
-  }
-}
-# --- END OPERATIONAL SCRIPT GATE ---
+# 2) Save (creates zips + checkpoint + handoff + desktop mirror)
+& $saveScript -Note $Note
 
+# 3) Print most recent handoff/checkpoint paths for quick pickup
+$handoff = Get-ChildItem -LiteralPath $saveRoot -Filter 'JP_HANDOFF_*.txt' -File -ErrorAction SilentlyContinue |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
 
-Step "GATE (master clean + synced)" {
-  git fetch --prune | Out-Host
-  git checkout master | Out-Host
-  git pull --ff-only | Out-Host
+$checkpointPath = Join-Path $saveRoot 'JP_ENGINE_LATEST_CHECKPOINT.txt'
 
-  $s = git status --porcelain
-  if ($s) { throw ("Working tree NOT clean:`n{0}" -f $s) }
-
-  git status -sb | Out-Host
-  git log -1 --oneline | Out-Host
-}
-
-Step "STOP node/npm dev processes (if any)" {
-  Get-Process node -ErrorAction SilentlyContinue |
-    Stop-Process -Force -ErrorAction SilentlyContinue
-}
-
-Step "REMOVE common dev locks (safe if missing)" {
-  $lock = Join-Path $repoN '.next\dev\lock'
-  if (Test-Path -LiteralPath $lock) {
-    Remove-Item -LiteralPath $lock -Force
-    Write-Host ("Removed: {0}" -f $lock) -ForegroundColor DarkCyan
-  } else {
-    Write-Host "No Next.js lock found." -ForegroundColor DarkCyan
-  }
-}
-
-if (-not $SkipBackups) {
-  Step "HOLD BACKUPS + RESTORE TEST" {
-    $hold = Join-Path $repoN 'scripts\jp-hold-backups.ps1'
-    if (-not (Test-Path -LiteralPath $hold)) { throw "Missing: scripts\jp-hold-backups.ps1" }
-
-    if ($KeepRestoreDir) {
-      pwsh -NoProfile -File $hold -KeepRestoreDir
-    } else {
-      pwsh -NoProfile -File $hold
-    }
-
-    if ($LASTEXITCODE -ne 0) { throw ("jp-hold-backups.ps1 failed (exit code {0})." -f $LASTEXITCODE) }
-  }
-} else {
-  Write-Host "WARNING: SkipBackups was set — backups not held." -ForegroundColor Yellow
-}
-
-Step "FINAL STATUS CHECK" {
-  git status -sb | Out-Host
-}
-
-Step "WRITE HANDOFF (docs/JP_ENGINE_HANDOFF.md)" {
-  $w = Join-Path $repoN 'scripts\jp-handoff-write.ps1'
-  if (-not (Test-Path -LiteralPath $w)) { throw "Missing: scripts\jp-handoff-write.ps1" }
-  pwsh -NoProfile -File $w
-  if ($LASTEXITCODE -ne 0) { throw ("jp-handoff-write.ps1 failed (exit code {0})." -f $LASTEXITCODE) }
-}
-
-Write-Host ""
-Write-Host "🟢 JP ENGINE FULL SHUTDOWN COMPLETE (with backups held + restore proven)." -ForegroundColor Green
+Say ""
+Say "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
+Say "JP SHUTDOWN — DONE"
+if ($handoff) { Say ("HANDOFF (latest): " + $handoff.FullName) } else { Say "HANDOFF (latest): (not found)" }
+if (Test-Path -LiteralPath $checkpointPath) { Say ("CHECKPOINT:      " + $checkpointPath) } else { Say "CHECKPOINT:      (not found)" }
+Say "NOTE:"
+Say $Note
+Say "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
+Say ""
