@@ -11,7 +11,20 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Say([string]$s) { Write-Host $s }
+function Say([string]$s) {
+  Write-Host $s
+}
+
+function Invoke-Git([string[]]$GitArgs) {
+  if (-not $GitArgs -or $GitArgs.Count -lt 1) { throw "Invoke-Git called with empty args (bug)." }
+  $out = & git @GitArgs 2>&1
+  $code = $LASTEXITCODE
+  if ($code -ne 0) {
+    $msg = ($out | Out-String).Trim()
+    throw "git $($GitArgs -join ' ') failed (exit $code)`n$msg"
+  }
+  return $out
+}
 
 function Get-SafeCrlf() {
   try { (git config --local --get core.safecrlf 2>$null) } catch { $null }
@@ -23,22 +36,6 @@ function Set-SafeCrlf([string]$v) {
   } else {
     git config --local core.safecrlf $v | Out-Null
   }
-}
-
-function Invoke-Git([string[]]$GitArgs) {
-  if (-not $GitArgs -or $GitArgs.Count -lt 1) {
-    throw "Invoke-Git called with empty args (bug)."
-  }
-
-  $out  = & git @GitArgs 2>&1
-  $code = $LASTEXITCODE
-
-  if ($code -ne 0) {
-    $msg = ($out | Out-String).Trim()
-    throw "git $($GitArgs -join ' ') failed (exit $code)`n$msg"
-  }
-
-  return $out
 }
 
 function Try-GitAdd([string[]]$paths) {
@@ -54,15 +51,25 @@ function Try-GitAdd([string[]]$paths) {
   throw "git add failed (exit $code)`n$msg"
 }
 
-# 0) Preflight
-Say "jp-commit: staging paths..."
-Invoke-Git @('status','--porcelain') | Out-Null
+# ---- repo-root gate (no-drift, write tool) ----
+$__RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$__Here     = (Resolve-Path -LiteralPath (Get-Location).Path).Path
+if ($__Here -ne $__RepoRoot) {
+  Set-Location -LiteralPath $__RepoRoot
+}
 
-# 1) Stage with safecrlf SOP fallback
+# ---- preflight ----
+Say "jp-commit: repo=$__RepoRoot"
+Invoke-Git @('rev-parse','--is-inside-work-tree') | Out-Null
+
+if (-not $Paths -or $Paths.Count -lt 1) { throw "jp-commit: Paths is empty." }
+
+# ---- stage with safecrlf fallback ----
 $safecrlfOriginal = Get-SafeCrlf
 $changedSafecrlf  = $false
 
 try {
+  Say "jp-commit: staging paths..."
   if (-not (Try-GitAdd -paths $Paths)) {
     Say "jp-commit: safecrlf blocked staging; temporarily setting core.safecrlf=warn"
     Set-SafeCrlf 'warn'
@@ -70,26 +77,42 @@ try {
     Invoke-Git ( @('add','--') + $Paths ) | Out-Null
   }
 
-  Say "jp-commit: staged diff:"
+  Say "jp-commit: staged diff (cached) ..."
   Invoke-Git ( @('diff','--cached','--') + $Paths ) | Out-Null
 
-  # 2) Commit attempt #1 (native-aware)
+  # ---- commit attempt #1 ----
+  $headBefore = (Invoke-Git @('rev-parse','HEAD') | Out-String).Trim()
   Say "jp-commit: committing (attempt 1)..."
-  $out  = & git commit -m $Message 2>&1
-  $code = $LASTEXITCODE
+  $out1  = & git commit -m $Message 2>&1
+  $code1 = $LASTEXITCODE
 
-  if ($code -ne 0) {
-    $msg = ($out | Out-String)
+  if ($code1 -ne 0) {
+    $msg1 = ($out1 | Out-String)
 
     # If hooks modified files, re-stage + retry once.
-    if ($msg -match 'files were modified by this hook' -or $msg -match 'end-of-file-fixer' -or $msg -match 'pre-commit') {
+    if ($msg1 -match 'files were modified by this hook' -or
+        $msg1 -match 'end-of-file-fixer' -or
+        $msg1 -match 'pre-commit') {
+
       Say "jp-commit: hooks modified files; re-staging and retrying commit (attempt 2)..."
-      Invoke-Git ( @('add','--') + $Paths ) | Out-Null
+      if (-not (Try-GitAdd -paths $Paths)) {
+        Say "jp-commit: safecrlf blocked restage; temporarily setting core.safecrlf=warn"
+        Set-SafeCrlf 'warn'
+        $changedSafecrlf = $true
+        Invoke-Git ( @('add','--') + $Paths ) | Out-Null
+      }
+
       Invoke-Git ( @('diff','--cached','--') + $Paths ) | Out-Null
       Invoke-Git @('commit','-m',$Message) | Out-Null
     } else {
-      throw "git commit failed (exit $code)`n$msg"
+      throw "git commit failed (exit $code1)`n$msg1"
     }
+  }
+
+  # ---- verify commit actually happened ----
+  $headAfter = (Invoke-Git @('rev-parse','HEAD') | Out-String).Trim()
+  if ($headAfter -eq $headBefore) {
+    throw "jp-commit: commit did not advance HEAD. Stop and inspect: git status --porcelain; git log -1 --oneline"
   }
 
   if ($Push) {
@@ -99,7 +122,8 @@ try {
 
   Say "jp-commit: done."
   Invoke-Git @('status','--porcelain') | Out-Null
-} finally {
+}
+finally {
   if ($changedSafecrlf) {
     Say "jp-commit: restoring core.safecrlf"
     Set-SafeCrlf $safecrlfOriginal
