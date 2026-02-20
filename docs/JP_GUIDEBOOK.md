@@ -33,6 +33,14 @@ This is the single “ops manual” for JP Engine. If anything feels unclear or 
 ---
 
 ## 2) Verify (read-only)
+### Recommended daily commands
+
+- Start / resume a safe session: scripts\jp-start.ps1
+- One-button health check (safe during active work): scripts\jp-health.ps1
+- Proof save when clean: scripts\jp-health.ps1 -SaveProof -Note ""<why>""
+- Full shutdown (clean-tree required): scripts\jp-shutdown.ps1
+
+
 
 Run:
 - `scripts\jp-verify.ps1`
