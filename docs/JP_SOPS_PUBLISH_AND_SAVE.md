@@ -46,6 +46,7 @@ Integrity:
   - Use ... instead of Unicode ellipsis
 - Use SINGLE-QUOTED here-strings (@' ... '@) and insert variables via -f formatting.
 - Avoid pasted Unicode punctuation to prevent mojibake artifacts (example: mojibake like "ΓÇ£").
+- If mojibake appears, rewrite that sentence using ASCII-only punctuation and re-run pre-commit.
 - If pre-commit modifies files (e.g., end-of-file-fixer), re-stage and commit again.
 - If Git warns about CRLF/LF:
   - It's a warning; only change settings if Git blocks staging/commit.
