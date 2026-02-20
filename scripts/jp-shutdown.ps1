@@ -6,6 +6,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Tripwire (front-door rails)
+& .\scripts\jp-tripwire.ps1
+
+
 function Say([string]$s) { Write-Host $s }
 
 $repoRoot = 'C:\Users\lsphi\OneDrive\AI_Workspace\JP_ENGINE\jp-engine'
