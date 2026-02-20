@@ -30,6 +30,7 @@ Write-Host "══════════════════════�
 Write-Host "JP TRIPWIRE — START"
 Write-Host ("time: " + (Get-Date).ToString("yyyy-MM-dd HH:mm:ss"))
 Write-Host ("repo: " + (Get-Location).Path)
+Write-Host ("mode: " + ($(if ($AllowDirty) { "AllowDirty (clean-tree not enforced)" } else { "CleanRequired" })))
 Write-Host "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
 Write-Host ""
 
