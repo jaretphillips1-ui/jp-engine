@@ -34,3 +34,11 @@ It is meant to be printed at start/resume so the assistant and user stay aligned
 - Repo: `C:\Users\lsphi\OneDrive\AI_Workspace\JP_ENGINE\jp-engine`
 - SaveRoot: `C:\Users\lsphi\OneDrive\AI_Workspace\_SAVES\JP_ENGINE\LATEST`
 - Desktop: resolve via `[Environment]::GetFolderPath('Desktop')`
+
+<!-- NO_DRIFT_RULE_JP -->
+## No-drift rule (critical)
+
+- Always start/resume using the entrypoint resume script:
+  - scripts\jp-resume.ps1
+- Do **not** cd to a container folder and run git/scripts from there.
+- If you ever see ?? ../../../... spam or profile permission warnings, stop — you're in the wrong root. Run the resume script.
