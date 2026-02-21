@@ -118,9 +118,9 @@ if (-not $RunId -or $RunId.Count -lt 1) {
   Write-Host "`nJP WATCH CI — STARTED" -ForegroundColor Cyan
   Write-Host ("  Log: {0}" -f $Log) -ForegroundColor Cyan
   Write-Host ("  Poll: {0}s  Max: {1}m" -f $PollSeconds, $MaxMinutes) -ForegroundColor Cyan
-    $ooF = (Get-Variable -Name OpenOnFailure -ErrorAction SilentlyContinue).Value
+    $ooF = (Get-Variable -Name OpenOnFailure -ValueOnly -ErrorAction SilentlyContinue)
   if ($null -eq $ooF) { $ooF = $false }
-  $ooT = (Get-Variable -Name OpenOnTimeout -ErrorAction SilentlyContinue).Value
+  $ooT = (Get-Variable -Name OpenOnTimeout -ValueOnly -ErrorAction SilentlyContinue)
   if ($null -eq $ooT) { $ooT = $false }
   Write-Host ("  OpenOnFailure: {0}  OpenOnTimeout: {1}" -f $ooF, $ooT) -ForegroundColor Cyan
   Write-Host ("  RunIds: {0}" -f ($RunId -join ', ')) -ForegroundColor Cyan
