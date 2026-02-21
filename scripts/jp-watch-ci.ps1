@@ -57,10 +57,33 @@ function Get-LatestRunIds([string]$branch) {
   $runs = $json | ConvertFrom-Json
   if (-not $runs -or $runs.Count -lt 1) { throw "No runs found for branch: $branch" }
 
+  function Get-MinuteKey($v) {
+    if ($null -eq $v) { return '' }
+
+    if ($v -is [datetime]) {
+      return $v.ToString('yyyy-MM-ddTHH:mm')
+    }
+
+    # gh sometimes returns createdAt as string; normalize to yyyy-MM-ddTHH:mm when possible
+    $s = [string]$v
+    $dt = $null
+    if ([datetime]::TryParse($s, [ref]$dt)) {
+      return $dt.ToString('yyyy-MM-ddTHH:mm')
+    }
+
+    if ($s.Length -ge 16) { return $s.Substring(0,16) }
+    return $s
+  }
+
   # Return IDs for the newest push batch (same createdAt minute window is good enough)
-  $first = $runs[0].createdAt
-  $firstKey = $first.Substring(0,16) # yyyy-mm-ddThh:mm
-  $ids = @($runs | Where-Object { $_.createdAt.Substring(0,16) -eq $firstKey } | ForEach-Object { $_.databaseId.ToString() })
+  $firstKey = Get-MinuteKey $runs[0].createdAt
+
+  $ids = @()
+  foreach ($r in $runs) {
+    if ((Get-MinuteKey $r.createdAt) -eq $firstKey) {
+      $ids += $r.databaseId.ToString()
+    }
+  }
 
   if (-not $ids -or $ids.Count -lt 1) {
     $ids = @($runs[0].databaseId.ToString())
