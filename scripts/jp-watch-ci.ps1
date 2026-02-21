@@ -112,6 +112,14 @@ if (-not $RunId -or $RunId.Count -lt 1) {
 }
 
 ("watching run ids: {0}" -f ($RunId -join ', ')) | Add-Content -LiteralPath $Log -Encoding utf8
+
+
+  # Startup banner (console) — prints once so you instantly see log path + config
+  Write-Host "`nJP WATCH CI — STARTED" -ForegroundColor Cyan
+  Write-Host ("  Log: {0}" -f $Log) -ForegroundColor Cyan
+  Write-Host ("  Poll: {0}s  Max: {1}m" -f $PollSeconds, $MaxMinutes) -ForegroundColor Cyan
+  Write-Host ("  OpenOnFailure: {0}  OpenOnTimeout: {1}" -f $OpenOnFailure, $OpenOnTimeout) -ForegroundColor Cyan
+  Write-Host ("  RunIds: {0}" -f ($RunId -join ', ')) -ForegroundColor Cyan
 "" | Add-Content -LiteralPath $Log -Encoding utf8
 
 Notify "JP Engine" ("Watching CI ({0})..." -f $Branch) 660 140
