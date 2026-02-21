@@ -1,5 +1,6 @@
 param(
-  [switch]$AllowDirty = $false
+  [switch]$AllowDirty = $false,
+  [switch]$AllowMirror = $false
 )
 
 Set-StrictMode -Version Latest
@@ -34,13 +35,17 @@ Write-Host ("mode: " + ($(if ($AllowDirty) { "AllowDirty (clean-tree not enforce
 Write-Host "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"
 Write-Host ""
 
-# Canonical repo path guard (this machine)
-$expectedRepo = "C:\Users\lsphi\OneDrive\AI_Workspace\JP_ENGINE\jp-engine"
+# WORKING_CLONE_JP (policy)
+$workRepo   = "C:\dev\JP_ENGINE\jp-engine"
+$mirrorRepo = "C:\Users\lsphi\OneDrive\AI_Workspace\JP_ENGINE\jp-engine"
 $here = (Get-Location).Path
-if ($here -ne $expectedRepo) {
-  Fail ("Wrong repo location. Expected: " + $expectedRepo + " | Actual: " + $here)
-}
 
+if ($here -eq $mirrorRepo -and -not $AllowMirror) {
+  Fail ("Mirror clone detected. Use working repo: " + $workRepo + " | (or rerun tripwire with -AllowMirror if intentional).")
+}
+if ($here -ne $workRepo -and $here -ne $mirrorRepo) {
+  Fail ("Wrong repo location. Expected working: " + $workRepo + " | mirror: " + $mirrorRepo + " | Actual: " + $here)
+}
 # Required docs
 Require-Path ".\docs\AI_REMINDERS.md" "AI_REMINDERS"
 Require-Path ".\docs\JP_GUIDEBOOK.md" "JP_GUIDEBOOK"
